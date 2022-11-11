@@ -1,0 +1,13 @@
+#!/bin/sh
+set -e
+
+# Unsafe decision to fix https://github.com/actions/runner/issues/2033
+git config --global --add safe.directory "$GITHUB_WORKSPACE"
+git config --global user.email "github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"
+git config --global user.name "github-actions[bot]"
+chmod +x /scanner.sh
+/scanner.sh project.clj
+/scanner.sh deps.edn
+chmod +x /antq.sh
+/antq.sh project.clj
+/antq.sh deps.edn
