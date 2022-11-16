@@ -9,18 +9,22 @@ inputs:
     description: 'Create auto pull-requests when updates for primary dependencies are available.'
     required: false
     default: true
+  main_branch:
+    description: 'The branch into which you want your code merged.'
+    required: false
+    default: 'main'
   labels:
     description: 'Add labels to the pull-requests. Separate items by comma.'
     required: false
-    default: ""
+    default: ''
   reviewers:
     description: 'Add reviewers to the pull-requests. Separate items by comma.'
     required: false
-    default: ""
+    default: ''
   directory:
     description: 'Directory which will be scanned.'
     required: false
-    default: ""
+    default: ''
 runs:
   using: 'docker'
   image: 'Dockerfile'
