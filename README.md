@@ -51,6 +51,10 @@ jobs:
 
 Boolean value to enable or disable auto-pull-requests for dependencies updates.
 
+### main_branch
+
+The branch into which you want the pull requests created by the GitHub Action merged.
+
 ### labels
 
 Add labels to the pull requests created by the GitHub Action. The labels need to be separated by a comma (`,`) and need to already exist.
