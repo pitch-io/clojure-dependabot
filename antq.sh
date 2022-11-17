@@ -16,30 +16,53 @@ update_package () {
 }
 
 # $1 - "project.clj" or "deps.edn"
-if [[ $INPUT_AUTO_PULL_REQUEST == true ]]; then
-    if [[ -n $INPUT_DIRECTORY ]]; then
-        cd "$GITHUB_WORKSPACE$INPUT_DIRECTORY" || exit
-    fi
-    mapfile -t array < <(find . -name "$1")
-    for i in "${array[@]}"
+if [[ -n $INPUT_DIRECTORY ]]; then
+    cd "$GITHUB_WORKSPACE$INPUT_DIRECTORY" || exit
+fi
+mapfile -t array < <(find . -name "$1")
+if [[ $1 == "project.clj" ]]; then
+    echo "## Outdated Dependencies" >> "$GITHUB_STEP_SUMMARY"
+fi
+for i in "${array[@]}"
+do
+    summaryOutput=0
+    counterDuplicate=""
+    i=${i/.}
+    cljdir=$GITHUB_WORKSPACE$INPUT_DIRECTORY${i//\/$1}
+    cd "$cljdir" || exit
+    clojure -Sdeps '{:deps {com.github.liquidz/antq {:mvn/version "RELEASE"}}}' -M -m antq.core --reporter="json" > /tmp/antq-report.json || true
+    length=$(jq '. | length' /tmp/antq-report.json)
+    length=$((length-1))
+    for j in $(seq 0 $length);
     do
-        i=${i/.}
-        cljdir=$GITHUB_WORKSPACE$INPUT_DIRECTORY${i//\/$1}
-        cd "$cljdir" || exit
-        clojure -Sdeps '{:deps {com.github.liquidz/antq {:mvn/version "RELEASE"}}}' -M -m antq.core --reporter="json" > /tmp/antq-report.json || true
-        length=$(jq '. | length' /tmp/antq-report.json)
-        length=$((length-1))
-        for j in $(seq 0 $length);
-        do
-            fileType=$(jq -r ".[$j] .file" /tmp/antq-report.json)
-            if  [[ $fileType == "$1" ]]; then
-                name=$(jq -r ".[$j] .name" /tmp/antq-report.json)
-                version=$(jq -r ".[$j] .version" /tmp/antq-report.json)
-                latestVersion=$(jq -r ".[$j] .\"latest-version\"" /tmp/antq-report.json)
-                changesUrl=$(jq -r ".[$j] .\"changes-url\"" /tmp/antq-report.json)
-                time=$(date +%s)
-                escapedName=$(echo "$name" | tr "/" "-")
-                prefix="dependabot/clojure${cljdir/$GITHUB_WORKSPACE}/$escapedName-$latestVersion-"
+        fileType=$(jq -r ".[$j] .file" /tmp/antq-report.json)
+        if  [[ $fileType == "$1" ]]; then
+            name=$(jq -r ".[$j] .name" /tmp/antq-report.json)
+            version=$(jq -r ".[$j] .version" /tmp/antq-report.json)
+            latestVersion=$(jq -r ".[$j] .\"latest-version\"" /tmp/antq-report.json)
+            changesUrl=$(jq -r ".[$j] .\"changes-url\"" /tmp/antq-report.json)
+            time=$(date +%s)
+            escapedName=$(echo "$name" | tr "/" "-")
+            prefix="dependabot/clojure${cljdir/$GITHUB_WORKSPACE}/$escapedName-$latestVersion-"
+            if [[ "$summaryOutput" -eq 0 ]]; then
+                {
+                    echo "### $INPUT_DIRECTORY$i"
+                    echo "<details>"
+                    echo ""
+                    echo "| Dependency | From | To | Changelog |"
+                    echo "| --- | --- | --- | --- |"
+                } >> "$GITHUB_STEP_SUMMARY"
+                summaryOutput=1
+            fi
+            if [[ $counterDuplicate != *"| $name | $version | $latestVersion | [🔗 Changelog]($changesUrl) |"* ]]; then
+                if [[ $changesUrl == "null" ]]; then
+                    echo "| $name | $version | $latestVersion |  |" >> "$GITHUB_STEP_SUMMARY"
+                else
+                    echo "| $name | $version | $latestVersion | [🔗 Changelog]($changesUrl) |" >> "$GITHUB_STEP_SUMMARY"
+                fi
+                counterDuplicate+="| $name | $version | $latestVersion | [🔗 Changelog]($changesUrl) |"
+            fi
+            if [[ $INPUT_AUTO_PULL_REQUEST == true ]]; then
                 git fetch
                 mapfile -t branches < <(git branch -r | grep "$prefix")
                 if [[ ${branches[*]} ]]; then
@@ -59,6 +82,10 @@ if [[ $INPUT_AUTO_PULL_REQUEST == true ]]; then
                     update_package "$cljdir" "$name" "$1" "$escapedName" "$latestVersion" "$time" "$version" "$changesUrl"
                 fi
             fi
-        done
+        fi
     done
-fi
+    if [[ "$summaryOutput" -eq 1 ]]; then
+        echo "</details>" >> "$GITHUB_STEP_SUMMARY"
+        echo "" >> "$GITHUB_STEP_SUMMARY"
+    fi
+done
