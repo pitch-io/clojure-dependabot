@@ -15,7 +15,7 @@ dependency_tree_summary () {
 }
 
 vulnerabilities_summary () {
-    gh auth login --with-token <<<"$GITHUB_PAT_TOKEN"
+    gh auth login --with-token <<<"$GITHUB_TOKEN"
     vul_page=$(gh api -H "Accept: application/vnd.github+json" "/repos/$GITHUB_REPOSITORY/dependabot/alerts" --paginate)
     mapfile -t info_pack < <(jq -r --arg MANIFEST "$1" '.[] | select(.dependency.manifest_path == $MANIFEST and .state == "open") | (.number|tostring) + "|" + .security_vulnerability.package.name + "|" + .security_vulnerability.severity + "|" + .security_advisory.ghsa_id + "|" + .security_advisory.cve_id + "|" + .security_vulnerability.first_patched_version.identifier + "|"' <<< "${vul_page}")
     for i in "${info_pack[@]}"
