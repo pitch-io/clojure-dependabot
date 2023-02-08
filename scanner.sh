@@ -93,6 +93,7 @@ do
             echo "| --- | --- | --- | --- | --- | --- | --- |"
         } >> "$GITHUB_STEP_SUMMARY"
         vulnerabilities_summary "$db_path"
+        echo "" >> "$GITHUB_STEP_SUMMARY"
     else
         clojure -Spom
         mkdir depsedn
@@ -106,5 +107,6 @@ do
             echo "| --- | --- | --- | --- | --- | --- | --- |"
         } >> "$GITHUB_STEP_SUMMARY"
         vulnerabilities_summary "$db_path"
+        echo "" >> "$GITHUB_STEP_SUMMARY"
     fi
 done
