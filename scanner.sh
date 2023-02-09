@@ -15,9 +15,7 @@ dependency_tree_summary () {
 }
 
 vulnerabilities_summary () {
-    gh auth login --with-token <<<"$GITHUB_TOKEN"
-    vul_page=$(gh api -H "Accept: application/vnd.github+json" "/repos/$GITHUB_REPOSITORY/dependabot/alerts" --paginate)
-    mapfile -t info_pack < <(jq -r --arg MANIFEST "$1" '.[] | select(.dependency.manifest_path == $MANIFEST and .state == "open") | (.number|tostring) + "|" + .security_vulnerability.package.name + "|" + .security_vulnerability.severity + "|" + .security_advisory.ghsa_id + "|" + .security_advisory.cve_id + "|" + .security_vulnerability.first_patched_version.identifier + "|"' <<< "${vul_page}")
+    mapfile -t info_pack < <(jq -r --arg MANIFEST "$1" '.[] | select(.dependency.manifest_path == $MANIFEST and .state == "open") | (.number|tostring) + "|" + .security_vulnerability.package.name + "|" + .security_vulnerability.severity + "|" + .security_advisory.ghsa_id + "|" + .security_advisory.cve_id + "|" + .security_vulnerability.first_patched_version.identifier + "|"' <<< "$2")
     for i in "${info_pack[@]}"
     do
         IFS='|' read -r -a array_i <<< "$i" 
@@ -83,30 +81,41 @@ do
     if  [[ $1 == "project.clj" ]]; then
         lein pom
         mkdir projectclj
-        dependency_tree_summary "projectclj" "$i"
         mv pom.xml projectclj/
         maven-dependency-submission-linux-x64 --token "$GITHUB_TOKEN" --repository "$GITHUB_REPOSITORY" --branch-ref "$GITHUB_REF" --sha "$GITHUB_SHA" --directory "${cljdir}/projectclj" --job-name "${INPUT_DIRECTORY}${i}/projectclj"
+    else
+        clojure -Spom
+        mkdir depsedn
+        mv pom.xml depsedn/
+        maven-dependency-submission-linux-x64 --token "$GITHUB_TOKEN" --repository "$GITHUB_REPOSITORY" --branch-ref "$GITHUB_REF" --sha "$GITHUB_SHA" --directory "${cljdir}/depsedn" --job-name "${INPUT_DIRECTORY}${i}/depsedn"
+    fi
+done
+gh auth login --with-token <<<"$GITHUB_TOKEN"
+vul_page=$(gh api -H "Accept: application/vnd.github+json" "/repos/$GITHUB_REPOSITORY/dependabot/alerts" --paginate)
+for i in "${array[@]}"
+do
+    i=${i/.}
+    cljdir=$GITHUB_WORKSPACE$INPUT_DIRECTORY${i//\/$1}
+    cd "$cljdir" || exit
+    if  [[ $1 == "project.clj" ]]; then
+        dependency_tree_summary "projectclj" "$i"
         db_path="${cljdir}/projectclj/pom.xml"
         db_path=${db_path:1}
         {
             echo "| Number | Package | Severity | GHSA | CVE | Patched in | Dependency level |"
             echo "| --- | --- | --- | --- | --- | --- | --- |"
         } >> "$GITHUB_STEP_SUMMARY"
-        vulnerabilities_summary "$db_path"
+        vulnerabilities_summary "$db_path" "$vul_page"
         echo "" >> "$GITHUB_STEP_SUMMARY"
     else
-        clojure -Spom
-        mkdir depsedn
         dependency_tree_summary "depsedn" "$i"
-        mv pom.xml depsedn/
-        maven-dependency-submission-linux-x64 --token "$GITHUB_TOKEN" --repository "$GITHUB_REPOSITORY" --branch-ref "$GITHUB_REF" --sha "$GITHUB_SHA" --directory "${cljdir}/depsedn" --job-name "${INPUT_DIRECTORY}${i}/depsedn"
         db_path="${cljdir}/depsedn/pom.xml"
         db_path=${db_path:1}
         {
             echo "| Number | Package | Severity | GHSA | CVE | Patched in | Dependency level |"
             echo "| --- | --- | --- | --- | --- | --- | --- |"
         } >> "$GITHUB_STEP_SUMMARY"
-        vulnerabilities_summary "$db_path"
+        vulnerabilities_summary "$db_path" "$vul_page"
         echo "" >> "$GITHUB_STEP_SUMMARY"
     fi
 done
