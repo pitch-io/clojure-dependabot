@@ -4,13 +4,14 @@ Dependabot doesn't directly support Clojure projects, but it is possible to send
 
 This GitHub Action looks for all `project.clj` and `deps.edn` in the repository and sends the list of dependencies (both primary dependencies and transitive dependencies) to Dependabot. If enabled, it can open pull-requests to update packages.
 
-**Maintainers:** 🛳️ Pitch DevOps Team (https://www.pitch.com)
+**Maintainers:** ☁️ Pitch Cloud Engineering Team (https://www.pitch.com)
 
 ## Required Tokens
 
-The Action requires the following environment variables to run the [maven-dependency-submission-action](https://github.com/advanced-security/maven-dependency-submission-action) CLI and GitHub CLI to create auto-pull-requests for dependencies updates.
+The Action requires the following environment variables to run the [maven-dependency-submission-action](https://github.com/advanced-security/maven-dependency-submission-action) CLI and GitHub CLI to list GitHub Security Alerts (GHSA) and to create auto-pull-requests for dependencies updates.
 
-- `github.token`
+
+- GitHub Personal Access Token to run GitHub CLI (recommended privileges: `repo:all`)
 - `github.repository`
 - `github.ref`
 - `github.sha`
@@ -25,7 +26,7 @@ on:
   workflow_dispatch:
 
 env:
-  GITHUB_TOKEN: ${{ github.token }}
+  GITHUB_TOKEN: ${{ secret.PAT }}
   GITHUB_REPOSITORY: ${{ github.repository }}
   GITHUB_REF: ${{ github.ref }}
   GITHUB_SHA: ${{ github.sha }}
@@ -50,6 +51,14 @@ jobs:
 ### auto_pull_request
 
 Boolean value to enable or disable auto-pull-requests for dependencies updates.
+
+### security_updates_only
+
+Boolean value to enable only security updates.
+
+### severity
+
+Minimum severity to update vulnerable dependencies. The values are `low`, `medium`, `high`, and `critical`. The default value is `low`.
 
 ### main_branch
 

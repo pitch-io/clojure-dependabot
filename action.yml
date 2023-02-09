@@ -1,6 +1,6 @@
 name: 'Dependabot for Clojure projects'
 author: 'Luigi Gubello'
-description: 'Run Dependabot as GitHub Action workflow in your Clojure project.'
+description: 'Run Dependabot as GitHub Action workflow in your Clojure projects.'
 branding:
   icon: 'shield'
   color: 'gray-dark'
@@ -9,6 +9,14 @@ inputs:
     description: 'Create auto pull-requests when updates for primary dependencies are available.'
     required: false
     default: true
+  security_updates_only:
+    descrition: 'Update only vulnerable packages.'
+    required: false
+    default: true
+  severity:
+    descrition: 'Minimum severity to update. Values: low, medium, high, critical.'
+    required: false
+    default: 'low'
   main_branch:
     description: 'The branch into which you want your code merged.'
     required: false
