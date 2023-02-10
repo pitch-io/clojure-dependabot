@@ -81,12 +81,12 @@ do
     if  [[ $1 == "project.clj" ]]; then
         lein pom
         mkdir projectclj
-        mv pom.xml projectclj/
+        cp pom.xml projectclj/
         maven-dependency-submission-linux-x64 --token "$GITHUB_TOKEN" --repository "$GITHUB_REPOSITORY" --branch-ref "$GITHUB_REF" --sha "$GITHUB_SHA" --directory "${cljdir}/projectclj" --job-name "${INPUT_DIRECTORY}${i}/projectclj"
     else
         clojure -Spom
         mkdir depsedn
-        mv pom.xml depsedn/
+        cp pom.xml depsedn/
         maven-dependency-submission-linux-x64 --token "$GITHUB_TOKEN" --repository "$GITHUB_REPOSITORY" --branch-ref "$GITHUB_REF" --sha "$GITHUB_SHA" --directory "${cljdir}/depsedn" --job-name "${INPUT_DIRECTORY}${i}/depsedn"
     fi
 done
@@ -99,6 +99,7 @@ do
     cd "$cljdir" || exit
     if  [[ $1 == "project.clj" ]]; then
         dependency_tree_summary "projectclj" "$i"
+        rm pom.xml
         db_path="${cljdir}/projectclj/pom.xml"
         db_path=${db_path:1}
         {
@@ -109,6 +110,7 @@ do
         echo "" >> "$GITHUB_STEP_SUMMARY"
     else
         dependency_tree_summary "depsedn" "$i"
+        rm pom.xml
         db_path="${cljdir}/depsedn/pom.xml"
         db_path=${db_path:1}
         {
