@@ -33,7 +33,7 @@ inputs:
     description: 'Directory which will be scanned.'
     required: false
     default: ''
-  subdirectory_recursion:
+  include_subdirectories:
     description: 'Iteratively look for project.clj and deps.edn in the subdirectories.'
     required: false
     default: true
