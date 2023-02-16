@@ -73,6 +73,15 @@ mapfile -t array < <(find . -name "$1")
 if [[ $1 == "project.clj" ]]; then
     echo "## Outdated Dependencies" >> "$GITHUB_STEP_SUMMARY"
 fi
+if [[ $INPUT_SUBDIRECTORY_RECURSION != true ]]; then
+    if [[ $1 == "project.clj" ]] && [[ "${array[*]}" == *"./project.clj"* ]]; then
+        array=("./project.clj")
+    elif [[ $1 == "deps.edn" ]] && [[ "${array[*]}" == *"./deps.edn"* ]]; then
+        array=("./deps.edn")
+    else
+        array=()
+    fi
+fi
 for i in "${array[@]}"
 do
     summaryOutput=0
@@ -153,7 +162,7 @@ do
                 fi
                 counterDuplicate+="| $name | $version | $latestVersion | [🔗 Changelog]($changesUrl) | $securityUpdate |"
             fi
-            if [[ $INPUT_AUTO_PULL_REQUEST == true ]]; then
+            if [[ $INPUT_AUTO_PULL_REQUEST == true ]] && [[ ! "$INPUT_IGNORE_DEPENDENCY" == *"$name"* ]]; then
                 vulnerability_fix_pr "${newDependencies[@]}"
                 if [[ $INPUT_SECURITY_UPDATES_ONLY == true ]]; then
                     if [ -n "$securityUpdate" ]; then
