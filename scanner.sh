@@ -73,6 +73,15 @@ mapfile -t array < <(find . -name "$1")
 if [[ $1 == "project.clj" ]]; then
   echo "## Dependency Tree" >> "$GITHUB_STEP_SUMMARY"
 fi
+if [[ $INPUT_INCLUDE_SUBDIRECTORIES != true ]]; then
+    if [[ $1 == "project.clj" ]] && [[ "${array[*]}" == *"./project.clj"* ]]; then
+        array=("./project.clj")
+    elif [[ $1 == "deps.edn" ]] && [[ "${array[*]}" == *"./deps.edn"* ]]; then
+        array=("./deps.edn")
+    else
+        array=()
+    fi
+fi
 for i in "${array[@]}"
 do
     i=${i/.}

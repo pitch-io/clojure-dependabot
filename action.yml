@@ -33,6 +33,14 @@ inputs:
     description: 'Directory which will be scanned.'
     required: false
     default: ''
+  include_subdirectories:
+    description: 'Iteratively look for project.clj and deps.edn in the subdirectories.'
+    required: false
+    default: true
+  ignore_dependency:
+    description: 'Ignore specific dependencies. Separate items by comma.'
+    required: false
+    default: ''
 runs:
   using: 'docker'
   image: 'Dockerfile'
