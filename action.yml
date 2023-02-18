@@ -13,6 +13,10 @@ inputs:
     descrition: 'Update only vulnerable packages.'
     required: false
     default: true
+  update_omitted:
+    descrition: 'Update omitted packages.'
+    required: false
+    default: false
   severity:
     descrition: 'Minimum severity to update. Values: low, medium, high, critical.'
     required: false

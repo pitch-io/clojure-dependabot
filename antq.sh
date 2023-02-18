@@ -31,16 +31,53 @@ high_critical_check_security_fix () {
     for alertGh in "${tempGhAlerts[@]:2}"
     do
         IFS='|' read -r -a array_alertGh <<< "$alertGh"
-        if [[ "${array_alertGh[4]}" == "$1" ]]; then
-            afterUpdateVersion=$(mvn dependency:tree -DoutputType=dot -Dincludes="${array_alertGh[0]}" | grep -e "->" | cut -d ">" -f 2 | cut -d '"' -f 2 | grep -e "${array_alertGh[0]}" | cut -d ":" -f 4)
-            if version_ge "$afterUpdateVersion" "${array_alertGh[3]}"; then
-                if [[ ! "${newDependencies[*]}" == *"${array_alertGh[0]}|$afterUpdateVersion|"* ]]; then
-                    newDependencies+=("${array_alertGh[0]}|$afterUpdateVersion|")
+        if [[ "$INPUT_UPDATE_OMITTED" == false ]]; then
+            if [[ "${array_alertGh[4]}" == "$1" ]]; then
+                afterUpdateVersion=$(mvn dependency:tree -DoutputType=dot -Dincludes="${array_alertGh[0]}" | grep -e "->" | cut -d ">" -f 2 | cut -d '"' -f 2 | grep -e "${array_alertGh[0]}" | cut -d ":" -f 4)
+                if version_ge "$afterUpdateVersion" "${array_alertGh[3]}"; then
+                    if [[ ! "${newDependencies[*]}" == *"${array_alertGh[0]}|$afterUpdateVersion|"* ]]; then
+                        newDependencies+=("${array_alertGh[0]}|$afterUpdateVersion|")
+                    fi
+                fi
+                if [ -z "$afterUpdateVersion" ]; then
+                    if [[ ! "${newDependencies[*]}" == *"${array_alertGh[0]}|removed|"* ]]; then
+                        newDependencies+=("${array_alertGh[0]}|removed|")
+                    fi
                 fi
             fi
-            if [ -z "$afterUpdateVersion" ]; then
-                if [[ ! "${newDependencies[*]}" == *"${array_alertGh[0]}|removed|"* ]]; then
-                    newDependencies+=("${array_alertGh[0]}|removed|")
+        else
+            tempDependencyTree=$(mvn dependency:tree -Dincludes="${array_alertGh[0]}" -Dverbose)
+            tempFirstLevelDependencies=$(echo "$tempDependencyTree" | grep -e "\\\-" -e "\+\-" | grep -v -e "\s\s\\\-" -e "\s\s+\-" | cut -d "-" -f 2-100)
+            IFS=$'\n' read -d '' -r -a firstLevelDependencies <<< "$tempFirstLevelDependencies"
+            if [[ "${array_alertGh[5]}" == *"$1"* ]]; then
+                if [[ "${firstLevelDependencies[*]}" == *"$1"* ]]; then
+                    for ii in "${!firstLevelDependencies[@]}"; do
+                        if [[ "${firstLevelDependencies[$ii]}" == *"$1"* ]]; then
+                            if [[ ${ii} -eq ${#firstLevelDependencies[@]} ]]; then
+                                tempAfterUpdateVersions=$(echo "$tempDependencyTree" | sed -n '/${firstLevelDependencies[$i]}/,//p' | grep -e "\\\-" -e "\+\-" | grep -e "${array_alertGh[0]}" | awk -F "${array_alertGh[0]}:jar:" '{print $2; printf $100}' | cut -f1 -d ":")
+                                IFS=$'\n' read -d '' -r -a AfterUpdateVersions <<< "$tempAfterUpdateVersions"
+                                for jj in "${!AfterUpdateVersions[@]}"; do
+                                    if (version_ge "${AfterUpdateVersions[$jj]}" "${array_alertGh[3]}"  && [[ ! "${newDependencies[*]}" == *"${array_alertGh[0]}|${AfterUpdateVersions[$j]}|"* ]]); then
+                                        newDependencies+=("${array_alertGh[0]}|${AfterUpdateVersions[$jj]}|")
+                                        break
+                                    fi
+                                done
+                            else
+                                tempAfterUpdateVersions=$(echo "$tempDependencyTree" | sed -n "/${firstLevelDependencies[$ii]}/,/${firstLevelDependencies[(( $ii+1 ))]}/p" | sed '$d' | grep -e "\\\-" -e "\+\-" | grep -e "${array_alertGh[0]}" | awk -F "${array_alertGh[0]}:jar:" '{print $2; printf $100}' | cut -f1 -d ":")
+                                IFS=$'\n' read -d '' -r -a AfterUpdateVersions <<< "$tempAfterUpdateVersions"
+                                for jj in "${!AfterUpdateVersions[@]}"; do
+                                    if (version_ge "${AfterUpdateVersions[$jj]}" "${array_alertGh[3]}" && [[ ! "${newDependencies[*]}" == *"${array_alertGh[0]}|${AfterUpdateVersions[$jj]}|"* ]]); then
+                                        newDependencies+=("${array_alertGh[0]}|${AfterUpdateVersions[$jj]}|")
+                                        break
+                                    fi
+                                done
+                            fi
+                        fi
+                    done
+                else
+                    if [[ ! "${newDependencies[*]}" == *"${array_alertGh[0]}|removed|"* ]]; then
+                        newDependencies+=("${array_alertGh[0]}|removed|")
+                    fi
                 fi
             fi
         fi
@@ -119,6 +156,9 @@ do
             dep_level=$(mvn dependency:tree -DoutputType=dot -Dincludes="${array_vulnPackage[0]}" | grep -e "->" | cut -d ">" -f 2 | cut -d '"' -f 2 | cut -d ":" -f 1-2)
             IFS=' ' read -r -a dependency_level <<< "$dep_level"
             vulPackage+="${dependency_level[0]}|"
+            tempFirstLevelDependencies=$(mvn dependency:tree -Dincludes="${array_vulnPackage[0]}" -Dverbose | grep -e "\\\-" -e "\+\-" | grep -v -e "\s\s\\\-" -e "\s\s+\-" | cut -d "-" -f 2-100)
+            IFS=$'\n' read -d '' -r -a firstLevelDependencies <<< "$tempFirstLevelDependencies"
+            vulPackage+="${firstLevelDependencies[*]}|"
             githubAlerts+=("$vulPackage")
         fi
     done
