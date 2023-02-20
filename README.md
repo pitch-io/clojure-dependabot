@@ -48,41 +48,18 @@ jobs:
 
 ## Options
 
-### auto_pull_request
-
-Boolean value to enable or disable auto-pull-requests for dependencies updates.
-
-### security_updates_only
-
-Boolean value to enable only security updates.
-
-### severity
-
-Minimum severity to update vulnerable dependencies. The values are `low`, `medium`, `high`, and `critical`. The default value is `low`.
-
-### main_branch
-
-The branch into which you want the pull requests created by the GitHub Action merged.
-
-### labels
-
-Add labels to the pull requests created by the GitHub Action. The labels need to be separated by a comma (`,`) and need to already exist.
-
-### reviewers
-
-Add reviewers to the pull requests created by the GitHub Action. Multiple reviewers need to be separated by a comma (`,`).
-
-### directory
-
-By default, the GitHub Action scans the entire repository by looking for `project.clj` and `deps.edn` files. It is possible to define a specific sub-path to not scan the entire repository.
-
-### include_subdirectories
-
-Boolean value to enable the iterative search for `project.clj` and `deps.edn` files in subdirectories. The default value is `true`. 
-
-### ignore_dependency
-
-Add dependencies (`[groupId]/[artifactId]`) that must not be updated. Dependencies need to be separated by a comma (`,`).
+| Option | Description |
+| --- | --- |
+| `auto_pull_request` | Boolean value to enable or disable auto-pull-requests for dependencies updates. |
+| `security_updates_only`| Boolean value to enable only security updates. |
+| `update_omitted` | Update omitted packages. |
+| `severity` | Minimum severity to update vulnerable dependencies. The values are `low`, `medium`, `high`, and `critical`. The default value is `low`. |
+| `main_branch` | The branch into which you want the pull requests created by the GitHub Action merged. |
+| `labels` | Add labels to the pull requests created by the GitHub Action. The labels need to be separated by a comma (`,`) and need to already exist. |
+| `reviewers` | Add reviewers to the pull requests created by the GitHub Action. Multiple reviewers need to be separated by a comma (`,`). |
+| `directory` | By default, the GitHub Action scans the entire repository by looking for `project.clj` and `deps.edn` files. It is possible to define a specific sub-path to not scan the entire repository. |
+| `include_subdirectories` | Boolean value to enable the iterative search for `project.clj` and `deps.edn` files in subdirectories. The default value is `true`. |
+| `ignore_dependency` | Add dependencies (`[groupId]/[artifactId]`) that must not be updated. Dependencies need to be separated by a comma (`,`). |
 
 ## Security
 
