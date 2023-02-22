@@ -8,6 +8,11 @@ git config --global user.name "github-actions[bot]"
 chmod +x /scanner.sh
 /scanner.sh project.clj
 /scanner.sh deps.edn
+chmod +x /dependabot_alerts.sh
+/dependabot_alerts.sh
+chmod +x /alerts_summary.sh
+/alerts_summary.sh project.clj
+/alerts_summary.sh deps.edn
 chmod +x /antq.sh
 /antq.sh project.clj
 /antq.sh deps.edn
