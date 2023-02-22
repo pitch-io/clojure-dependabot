@@ -1,13 +1,13 @@
 #!/bin/bash
 
 dependency_tree_summary () {
-    mvn dependency:tree -Dverbose=true -DoutputFile="${1}/dependency-tree.txt"
+    mvn dependency:tree -Dverbose=true -DoutputFile="dependency-tree.txt"
     {
         echo "### $INPUT_DIRECTORY$2"
         echo "<details>"
         echo ""
         echo "\`\`\`"
-        cat "${1}/dependency-tree.txt"
+        cat dependency-tree.txt
         echo "\`\`\`"
         echo "</details>"
         echo ""
@@ -87,10 +87,9 @@ for i in "${array[@]}"
 do
     i=${i/.}
     cljdir=$GITHUB_WORKSPACE$INPUT_DIRECTORY${i//\/$1}
-    cd "$cljdir" || exit
     if  [[ $1 == "project.clj" ]]; then
-        dependency_tree_summary "projectclj" "$i"
-        rm pom.xml
+        cd "${cljdir}/projectclj" || exit
+        dependency_tree_summary "$i"
         db_path="${cljdir}/projectclj/pom.xml"
         db_path=${db_path:1}
         {
@@ -100,8 +99,8 @@ do
         vulnerabilities_summary "$db_path" "$vul_page"
         echo "" >> "$GITHUB_STEP_SUMMARY"
     else
-        dependency_tree_summary "depsedn" "$i"
-        rm pom.xml
+        cd "${cljdir}/depsedn" || exit
+        dependency_tree_summary "$i"
         db_path="${cljdir}/depsedn/pom.xml"
         db_path=${db_path:1}
         {
