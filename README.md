@@ -8,7 +8,7 @@ This GitHub Action looks for all `project.clj` and `deps.edn` in the repository 
 
 ## Required Tokens
 
-The Action requires the following environment variables to run the [maven-dependency-submission-action](https://github.com/advanced-security/maven-dependency-submission-action) CLI and GitHub CLI to list GitHub Security Alerts (GHSA) and to create auto-pull-requests for dependencies updates.
+The Action requires the following environment variables to run the [maven-dependency-submission-action](https://github.com/advanced-security/maven-dependency-submission-action) CLI and GitHub CLI to list GitHub Security Alerts (GHSA) and to create auto-pull-requests for dependencies updates. Both a Personal Access Token (PAT) and GitHub Token (`github.token`) are required: the Action needs a PAT because GitHub Token cannot be used to list security alerts for security reasons ([_"Granting access to security alerts"_](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-security-and-analysis-settings-for-your-repository#granting-access-to-security-alerts)), and the Action cannot open pull-requests as `github-actions (bot)` if it doesn't use the GitHub Token.
 
 
 - GitHub Personal Access Token to run GitHub CLI (recommended privileges: `repo:all`)
