@@ -22,6 +22,10 @@ RUN apt update && \
 
 COPY scanner.sh /scanner.sh
 
+COPY dependabot_alerts.sh /dependabot_alerts.sh
+
+COPY alerts_summary.sh /alerts_summary.sh
+
 COPY antq.sh /antq.sh
 
 COPY entrypoint.sh /entrypoint.sh

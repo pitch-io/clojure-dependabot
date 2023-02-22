@@ -130,7 +130,7 @@ do
     length=$(jq '. | length' /tmp/antq-report.json)
     length=$((length-1))
     githubAlerts=()
-    vul_page=$(gh api -H "Accept: application/vnd.github+json" "/repos/$GITHUB_REPOSITORY/dependabot/alerts" --paginate)
+    vul_page=$(cat /tmp/dependabot_alerts.json)
     if  [[ $1 == "project.clj" ]]; then
         pomManifestPath="$cljdir/projectclj" || exit
     else

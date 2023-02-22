@@ -12,6 +12,7 @@ The Action requires the following environment variables to run the [maven-depend
 
 
 - GitHub Personal Access Token to run GitHub CLI (recommended privileges: `repo:all`)
+- `github.token`
 - `github.repository`
 - `github.ref`
 - `github.sha`
@@ -26,7 +27,8 @@ on:
   workflow_dispatch:
 
 env:
-  GITHUB_TOKEN: ${{ secret.PAT }}
+  GITHUB_PAT: ${{ secret.PAT }}
+  GITHUB_TOKEN: ${{ github.token }}
   GITHUB_REPOSITORY: ${{ github.repository }}
   GITHUB_REF: ${{ github.ref }}
   GITHUB_SHA: ${{ github.sha }}
