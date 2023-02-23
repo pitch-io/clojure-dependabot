@@ -10,15 +10,16 @@ RUN apt update && \
     curl -O https://download.clojure.org/install/linux-install-1.11.1.1165.sh && \
     chmod +x linux-install-1.11.1.1165.sh && \
     ./linux-install-1.11.1.1165.sh && \
-    curl -L -o maven-dependency-submission-linux-x64 https://github.com/advanced-security/maven-dependency-submission-action/raw/main/cli/maven-dependency-submission-linux-x64 && \
-    chmod +x maven-dependency-submission-linux-x64 && \
-    mv maven-dependency-submission-linux-x64 /usr/bin/maven-dependency-submission-linux-x64 && \
     clojure -Ttools install-latest :lib com.github.liquidz/antq :as antq && \
     curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg && \
     chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg && \
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null && \
     apt update && \
     apt install gh -y
+
+# maven-dependency-submission-linux-x64 2.0.1
+# commit: 2ecce44ccb44fd4b52f43468d3644e2d3e2b3cf2
+COPY maven-dependency-submission-linux /maven-dependency-submission-linux
 
 COPY scanner.sh /scanner.sh
 

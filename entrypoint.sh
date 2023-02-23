@@ -1,6 +1,9 @@
 #!/bin/sh
 set -e
 
+# https://github.com/advanced-security/maven-dependency-submission-action/commit/2ecce44ccb44fd4b52f43468d3644e2d3e2b3cf2
+chmod +x /maven-dependency-submission-linux
+mv /maven-dependency-submission-linux /usr/bin/maven-dependency-submission-linux-x64
 # Unsafe decision to fix https://github.com/actions/runner/issues/2033
 git config --global --add safe.directory "$GITHUB_WORKSPACE"
 git config --global user.email "github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"
