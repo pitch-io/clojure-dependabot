@@ -22,12 +22,12 @@ do
     if  [[ $1 == "project.clj" ]]; then
         lein pom
         mkdir projectclj
-        cp pom.xml projectclj/
+        mv pom.xml projectclj/
         maven-dependency-submission-linux-x64 --token "$GITHUB_TOKEN" --repository "$GITHUB_REPOSITORY" --branch-ref "$GITHUB_REF" --sha "$GITHUB_SHA" --directory "${cljdir}/projectclj" --job-name "${INPUT_DIRECTORY}${i}/projectclj"
     else
         clojure -Spom
         mkdir depsedn
-        cp pom.xml depsedn/
+        mv pom.xml depsedn/
         maven-dependency-submission-linux-x64 --token "$GITHUB_TOKEN" --repository "$GITHUB_REPOSITORY" --branch-ref "$GITHUB_REF" --sha "$GITHUB_SHA" --directory "${cljdir}/depsedn" --job-name "${INPUT_DIRECTORY}${i}/depsedn"
     fi
 done
