@@ -20,6 +20,8 @@ RUN apt update && \
     apt update && \
     apt install gh -y
 
+COPY local_dependency.sh /local_dependency.sh
+
 COPY scanner.sh /scanner.sh
 
 COPY dependabot_alerts.sh /dependabot_alerts.sh

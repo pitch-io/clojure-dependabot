@@ -62,6 +62,7 @@ jobs:
 | `directory` | By default, the GitHub Action scans the entire repository by looking for `project.clj` and `deps.edn` files. It is possible to define a specific sub-path to not scan the entire repository. |
 | `include_subdirectories` | Boolean value to enable the iterative search for `project.clj` and `deps.edn` files in subdirectories. The default value is `true`. |
 | `ignore_dependency` | Add dependencies (`[groupId]/[artifactId]`) that must not be updated. Dependencies need to be separated by a comma (`,`). |
+| `local_dependency` | Install dependencies (`[pathToFile]:[groupdId]:[artifactId]:[version]:[packaging]`) into local repository cache. Dependencies need to be separated by a comma (`,`). |
 
 ## Security
 
