@@ -5,6 +5,8 @@ set -e
 git config --global --add safe.directory "$GITHUB_WORKSPACE"
 git config --global user.email "github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"
 git config --global user.name "github-actions[bot]"
+chmod +x /local_dependency.sh
+/local_dependency.sh
 chmod +x /scanner.sh
 /scanner.sh project.clj
 /scanner.sh deps.edn
