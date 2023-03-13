@@ -49,6 +49,10 @@ inputs:
     description: 'Install maven jars to the local repository cache. Separate items by comma.'
     required: false
     default: ''
+  verbose:
+    descrition: 'Verbose output.'
+    required: false
+    default: false
 runs:
   using: 'docker'
   image: 'Dockerfile'
