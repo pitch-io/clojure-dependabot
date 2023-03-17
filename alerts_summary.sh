@@ -2,6 +2,9 @@
 
 dependency_tree_summary () {
     mvn dependency:tree -Dverbose=true -DoutputFile="dependency-tree.txt"
+    if [[ "$INPUT_VERBOSE" == true ]]; then
+        cat dependency-tree.txt
+    fi
     {
         echo "### $INPUT_DIRECTORY$2"
         echo "<details>"
@@ -67,7 +70,13 @@ vulnerabilities_summary () {
 
 # $1 - "project.clj" or "deps.edn"
 if [[ -n $INPUT_DIRECTORY ]]; then
+    if [[ "$INPUT_VERBOSE" == true ]]; then
+        echo "Moving to $GITHUB_WORKSPACE$INPUT_DIRECTORY"
+    fi
     cd "$GITHUB_WORKSPACE$INPUT_DIRECTORY" || exit
+fi
+if [[ "$INPUT_VERBOSE" == true ]]; then
+        echo "Finding all $1 files"
 fi
 mapfile -t array < <(find . -name "$1")
 if [[ $1 == "project.clj" ]]; then
@@ -85,6 +94,9 @@ fi
 vul_page=$(cat /tmp/dependabot_alerts.json)
 for i in "${array[@]}"
 do
+    if [[ "$INPUT_VERBOSE" == true ]]; then
+        echo "Creating the dependency tree for $i"
+    fi
     i=${i/.}
     cljdir=$GITHUB_WORKSPACE$INPUT_DIRECTORY${i//\/$1}
     if  [[ $1 == "project.clj" ]]; then

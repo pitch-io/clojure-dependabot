@@ -30,44 +30,83 @@ high_critical_check_security_fix () {
     cd "$2" || exit
     for alertGh in "${tempGhAlerts[@]:2}"
     do
+        if [[ "$INPUT_VERBOSE" == true ]]; then
+            echo "newDependencies array: ${newDependencies[*]}"
+            echo "Checking the first-level dep $1"
+            echo "$alertGh"
+        fi
         IFS='|' read -r -a array_alertGh <<< "$alertGh"
         if [[ "$INPUT_UPDATE_OMITTED" == false ]]; then
+            if [[ "$INPUT_VERBOSE" == true ]]; then
+                echo "Update omitted packages: false"
+            fi   
             if [[ "${array_alertGh[4]}" == "$1" ]]; then
                 afterUpdateVersion=$(mvn dependency:tree -DoutputType=dot -Dincludes="${array_alertGh[0]}" | grep -e "->" | cut -d ">" -f 2 | cut -d '"' -f 2 | grep -e "${array_alertGh[0]}" | cut -d ":" -f 4)
+                if [[ "$INPUT_VERBOSE" == true ]]; then
+                    echo "Checking available security updates for ${array_alertGh[0]}. Current: ${array_alertGh[3]} Latest: $afterUpdateVersion"
+                fi
                 if version_ge "$afterUpdateVersion" "${array_alertGh[3]}"; then
                     if [[ ! "${newDependencies[*]}" == *"${array_alertGh[0]}|$afterUpdateVersion|"* ]]; then
                         newDependencies+=("${array_alertGh[0]}|$afterUpdateVersion|")
+                        if [[ "$INPUT_VERBOSE" == true ]]; then
+                            echo "${array_alertGh[0]}|$afterUpdateVersion|"
+                        fi
                     fi
                 fi
                 if [ -z "$afterUpdateVersion" ]; then
                     if [[ ! "${newDependencies[*]}" == *"${array_alertGh[0]}|removed|"* ]]; then
                         newDependencies+=("${array_alertGh[0]}|removed|")
+                        if [[ "$INPUT_VERBOSE" == true ]]; then
+                            echo "${array_alertGh[0]}|removed|"
+                        fi
                     fi
                 fi
             fi
         else
+            if [[ "$INPUT_VERBOSE" == true ]]; then
+                echo "Update omitted packages: true"
+            fi
             tempDependencyTree=$(mvn dependency:tree -Dincludes="${array_alertGh[0]}" -Dverbose)
             tempFirstLevelDependencies=$(echo "$tempDependencyTree" | grep -e "\\\-" -e "\+\-" | grep -v -e "\s\s\\\-" -e "\s\s+\-" | cut -d "-" -f 2-100)
+            if [[ "$INPUT_VERBOSE" == true ]]; then
+                echo "Checking available security updates for ${array_alertGh[0]}. Current: ${array_alertGh[3]}"
+                echo "First-level dependencies for ${array_alertGh[0]}"
+                echo "$tempFirstLevelDependencies"
+            fi
             IFS=$'\n' read -d '' -r -a firstLevelDependencies <<< "$tempFirstLevelDependencies"
             if [[ "${array_alertGh[5]}" == *"$1"* ]]; then
                 if [[ "${firstLevelDependencies[*]}" == *"$1"* ]]; then
                     for ii in "${!firstLevelDependencies[@]}"; do
                         if [[ "${firstLevelDependencies[$ii]}" == *"$1"* ]]; then
                             if [[ ${ii} -eq ${#firstLevelDependencies[@]} ]]; then
-                                tempAfterUpdateVersions=$(echo "$tempDependencyTree" | sed -n '/${firstLevelDependencies[$i]}/,//p' | grep -e "\\\-" -e "\+\-" | grep -e "${array_alertGh[0]}" | awk -F "${array_alertGh[0]}:jar:" '{print $2; printf $100}' | cut -f1 -d ":")
+                                tempAfterUpdateVersions=$(echo "$tempDependencyTree" | sed -n "/${firstLevelDependencies[$ii]}/,//p" | grep -e "\\\-" -e "\+\-" | grep -e "${array_alertGh[0]}" | awk -F "${array_alertGh[0]}:jar:" '{print $2; printf $100}' | cut -f1 -d ":")
+                                if [[ "$INPUT_VERBOSE" == true ]]; then
+                                    echo "Latest versions for ${array_alertGh[0]} in $1"
+                                    echo "$tempAfterUpdateVersions"
+                                fi                                
                                 IFS=$'\n' read -d '' -r -a AfterUpdateVersions <<< "$tempAfterUpdateVersions"
                                 for jj in "${!AfterUpdateVersions[@]}"; do
                                     if (version_ge "${AfterUpdateVersions[$jj]}" "${array_alertGh[3]}"  && [[ ! "${newDependencies[*]}" == *"${array_alertGh[0]}|${AfterUpdateVersions[$j]}|"* ]]); then
                                         newDependencies+=("${array_alertGh[0]}|${AfterUpdateVersions[$jj]}|")
+                                        if [[ "$INPUT_VERBOSE" == true ]]; then
+                                            echo "${array_alertGh[0]}|${AfterUpdateVersions[$jj]}|"
+                                        fi
                                         break
                                     fi
                                 done
                             else
                                 tempAfterUpdateVersions=$(echo "$tempDependencyTree" | sed -n "/${firstLevelDependencies[$ii]}/,/${firstLevelDependencies[(( $ii+1 ))]}/p" | sed '$d' | grep -e "\\\-" -e "\+\-" | grep -e "${array_alertGh[0]}" | awk -F "${array_alertGh[0]}:jar:" '{print $2; printf $100}' | cut -f1 -d ":")
+                                if [[ "$INPUT_VERBOSE" == true ]]; then
+                                    echo "Latest versions for ${array_alertGh[0]} in $1"
+                                    echo "$tempAfterUpdateVersions"
+                                fi  
                                 IFS=$'\n' read -d '' -r -a AfterUpdateVersions <<< "$tempAfterUpdateVersions"
                                 for jj in "${!AfterUpdateVersions[@]}"; do
                                     if (version_ge "${AfterUpdateVersions[$jj]}" "${array_alertGh[3]}" && [[ ! "${newDependencies[*]}" == *"${array_alertGh[0]}|${AfterUpdateVersions[$jj]}|"* ]]); then
                                         newDependencies+=("${array_alertGh[0]}|${AfterUpdateVersions[$jj]}|")
+                                        if [[ "$INPUT_VERBOSE" == true ]]; then
+                                            echo "${array_alertGh[0]}|${AfterUpdateVersions[$jj]}|"
+                                        fi
                                         break
                                     fi
                                 done
@@ -76,6 +115,9 @@ high_critical_check_security_fix () {
                     done
                 else
                     if [[ ! "${newDependencies[*]}" == *"${array_alertGh[0]}|removed|"* ]]; then
+                        if [[ "$INPUT_VERBOSE" == true ]]; then
+                            echo "${array_alertGh[0]}|removed|"
+                        fi
                         newDependencies+=("${array_alertGh[0]}|removed|")
                     fi
                 fi
@@ -104,7 +146,13 @@ vulnerability_fix_pr () {
 
 # $1 - "project.clj" or "deps.edn"
 if [[ -n $INPUT_DIRECTORY ]]; then
+    if [[ "$INPUT_VERBOSE" == true ]]; then
+        echo "Moving to $GITHUB_WORKSPACE$INPUT_DIRECTORY"
+    fi
     cd "$GITHUB_WORKSPACE$INPUT_DIRECTORY" || exit
+fi
+if [[ "$INPUT_VERBOSE" == true ]]; then
+        echo "Finding all $1 files"
 fi
 mapfile -t array < <(find . -name "$1")
 if [[ $1 == "project.clj" ]]; then
@@ -121,20 +169,32 @@ if [[ $INPUT_INCLUDE_SUBDIRECTORIES != true ]]; then
 fi
 for i in "${array[@]}"
 do
+    if [[ "$INPUT_VERBOSE" == true ]]; then
+        echo "Working on $i"
+    fi
     summaryOutput=0
     counterDuplicate=""
     i=${i/.}
     cljdir=$GITHUB_WORKSPACE$INPUT_DIRECTORY${i//\/$1}
     cd "$cljdir" || exit
+    if [[ "$INPUT_VERBOSE" == true ]]; then
+        echo "Creating antq-report.json"
+    fi
     clojure -Sdeps '{:deps {com.github.liquidz/antq {:mvn/version "RELEASE"}}}' -M -m antq.core --reporter="json" > /tmp/antq-report.json || true
     length=$(jq '. | length' /tmp/antq-report.json)
     length=$((length-1))
     githubAlerts=()
     vul_page=$(cat /tmp/dependabot_alerts.json)
+    if [[ "$INPUT_VERBOSE" == true ]]; then
+        echo "$vul_page"
+    fi
     if  [[ $1 == "project.clj" ]]; then
         pomManifestPath="$cljdir/projectclj" || exit
     else
         pomManifestPath="$cljdir/depsedn" || exit
+    fi
+    if [[ "$INPUT_VERBOSE" == true ]]; then
+        echo "Checking GitHub Security alerts for $i"
     fi
     mapfile -t tempGithubAlerts < <(jq -r --arg MANIFEST "${pomManifestPath:1}/pom.xml" '.[] | select(.dependency.manifest_path == $MANIFEST and .state == "open") | .security_vulnerability.package.name + "|" + .security_vulnerability.severity + "|" + .security_advisory.ghsa_id + "|" + .security_vulnerability.first_patched_version.identifier + "|"' <<< "${vul_page}")
     for vulPackage in "${tempGithubAlerts[@]}"
@@ -160,11 +220,17 @@ do
             IFS=$'\n' read -d '' -r -a firstLevelDependencies <<< "$tempFirstLevelDependencies"
             vulPackage+="${firstLevelDependencies[*]}|"
             githubAlerts+=("$vulPackage")
+            if [[ "$INPUT_VERBOSE" == true ]]; then
+                echo "$vulPackage"
+            fi
         fi
     done
     cd "$cljdir" || exit
     # required for high_critical_check_security_fix() to not duplicate operations
     clojure -Sdeps '{:deps {com.github.liquidz/antq {:mvn/version "RELEASE"}}}' -M -m antq.core --upgrade --force --skip=clojure-cli --skip=leiningen --directory="$pomManifestPath"
+    if [[ "$INPUT_VERBOSE" == true ]]; then
+        echo "Checking available security updates for $i"
+    fi
     for j in $(seq 0 $length);
     do
         fileType=$(jq -r ".[$j] .file" /tmp/antq-report.json)
@@ -176,8 +242,17 @@ do
             time=$(date +%s)
             escapedName=$(echo "$name" | tr "/" "-")
             namePom=$(echo "$name" | tr "/" ":")
+            if [[ "$INPUT_VERBOSE" == true ]]; then
+                echo "Package: $name Current: $version Latest: $latestVersion"
+            fi
+            if [[ "$INPUT_VERBOSE" == true ]]; then
+                echo "Running high_critical_check_security_fix()"
+            fi
             high_critical_check_security_fix "$namePom" "$pomManifestPath" "${githubAlerts[@]}"
             cd "$cljdir" || exit
+            if [[ "$INPUT_VERBOSE" == true ]]; then
+                echo "${newDependencies[*]}"
+            fi
             if [ ${#newDependencies[@]} -eq 0 ]; then
                 securityUpdate=""
             else
@@ -194,15 +269,27 @@ do
                 } >> "$GITHUB_STEP_SUMMARY"
                 summaryOutput=1
             fi
+            if [[ "$INPUT_VERBOSE" == true ]]; then
+                echo "Adding info to GitHub Summary"
+            fi            
             if [[ $counterDuplicate != *"| $name | $version | $latestVersion | [🔗 Changelog]($changesUrl) | $securityUpdate |"* ]]; then
                 if [[ $changesUrl == "null" ]]; then
                     echo "| $name | $version | $latestVersion |  | $securityUpdate |" >> "$GITHUB_STEP_SUMMARY"
+                    if [[ "$INPUT_VERBOSE" == true ]]; then
+                        echo echo "| $name | $version | $latestVersion |  | $securityUpdate |"
+                    fi
                 else
                     echo "| $name | $version | $latestVersion | [🔗 Changelog]($changesUrl) | $securityUpdate |" >> "$GITHUB_STEP_SUMMARY"
+                    if [[ "$INPUT_VERBOSE" == true ]]; then
+                        echo "| $name | $version | $latestVersion | [🔗 Changelog]($changesUrl) | $securityUpdate |"
+                    fi                
                 fi
                 counterDuplicate+="| $name | $version | $latestVersion | [🔗 Changelog]($changesUrl) | $securityUpdate |"
             fi
             if [[ $INPUT_AUTO_PULL_REQUEST == true ]] && [[ ! "$INPUT_IGNORE_DEPENDENCY" == *"$name"* ]]; then
+                if [[ "$INPUT_VERBOSE" == true ]]; then
+                    echo "Running vulnerability_fix_pr()"
+                fi
                 vulnerability_fix_pr "${newDependencies[@]}"
                 if [[ $INPUT_SECURITY_UPDATES_ONLY == true ]]; then
                     if [ -n "$securityUpdate" ]; then
@@ -215,13 +302,22 @@ do
                                 prTime+=("${k//origin\/$prefix/}")
                             done
                             IFS=" " read -r -a lastBranch <<< "$(echo "${prTime[*]}" | xargs -n1 | sort -nr | xargs)"
+                            if [[ "$INPUT_VERBOSE" == true ]]; then
+                                echo "Checking if the security update PR already exists"
+                            fi
                             statusPr=$(gh pr list --head "$prefix${lastBranch[0]}" --state open --json title | jq ". | length")
                             if [[ $statusPr -lt 1 ]]; then
+                                if [[ "$INPUT_VERBOSE" == true ]]; then
+                                    echo "Create the security PR dependabot/clojure${cljdir/$GITHUB_WORKSPACE}/$escapedName-$latestVersion-$1-$time"
+                                fi
                                 update_package "$cljdir" "$name" "$1" "$escapedName" "$latestVersion" "$time" "$version" "$changesUrl" "$securityUpdatesPrBody"
                             else
                                 git checkout "$INPUT_MAIN_BRANCH"
                             fi
                         else
+                            if [[ "$INPUT_VERBOSE" == true ]]; then
+                                echo "Create the security PR dependabot/clojure${cljdir/$GITHUB_WORKSPACE}/$escapedName-$latestVersion-$1-$time"
+                            fi
                             update_package "$cljdir" "$name" "$1" "$escapedName" "$latestVersion" "$time" "$version" "$changesUrl" "$securityUpdatesPrBody"
                         fi    
                     fi
@@ -235,13 +331,22 @@ do
                             prTime+=("${k//origin\/$prefix/}")
                         done
                         IFS=" " read -r -a lastBranch <<< "$(echo "${prTime[*]}" | xargs -n1 | sort -nr | xargs)"
+                        if [[ "$INPUT_VERBOSE" == true ]]; then
+                            echo "Checking if the security update PR already exists"
+                        fi
                         statusPr=$(gh pr list --head "$prefix${lastBranch[0]}" --state open --json title | jq ". | length")
                         if [[ $statusPr -lt 1 ]]; then
+                            if [[ "$INPUT_VERBOSE" == true ]]; then
+                                echo "Create the security PR dependabot/clojure${cljdir/$GITHUB_WORKSPACE}/$escapedName-$latestVersion-$1-$time"
+                            fi
                             update_package "$cljdir" "$name" "$1" "$escapedName" "$latestVersion" "$time" "$version" "$changesUrl" "$securityUpdatesPrBody"
                         else
                             git checkout "$INPUT_MAIN_BRANCH"
                         fi
                     else
+                        if [[ "$INPUT_VERBOSE" == true ]]; then
+                            echo "Create the security PR dependabot/clojure${cljdir/$GITHUB_WORKSPACE}/$escapedName-$latestVersion-$1-$time"
+                        fi
                         update_package "$cljdir" "$name" "$1" "$escapedName" "$latestVersion" "$time" "$version" "$changesUrl" "$securityUpdatesPrBody"
                     fi
                 fi

@@ -63,6 +63,8 @@ jobs:
 | `include_subdirectories` | Boolean value to enable the iterative search for `project.clj` and `deps.edn` files in subdirectories. The default value is `true`. |
 | `ignore_dependency` | Add dependencies (`[groupId]/[artifactId]`) that must not be updated. Dependencies need to be separated by a comma (`,`). |
 | `local_dependency` | Install dependencies (`[pathToFile]:[groupdId]:[artifactId]:[version]:[packaging]`) into local repository cache. Dependencies need to be separated by a comma (`,`). |
+| `verbose` | Boolean. Enable verbose mode. |
+
 
 ## Security
 
