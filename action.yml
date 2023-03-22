@@ -14,7 +14,7 @@ inputs:
     required: false
     default: true
   update_omitted:
-    descrition: 'Update omitted packages.'
+    descrition: '[Unstable] Update omitted packages.'
     required: false
     default: false
   severity:
