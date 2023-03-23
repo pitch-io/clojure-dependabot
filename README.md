@@ -54,7 +54,7 @@ jobs:
 | --- | --- |
 | `auto_pull_request` | Boolean value to enable or disable auto-pull-requests for dependencies updates. |
 | `security_updates_only`| Boolean value to enable only security updates. |
-| `update_omitted` | Update omitted packages. |
+| `update_omitted` | Update omitted packages. Unstable feature. |
 | `severity` | Minimum severity to update vulnerable dependencies. The values are `low`, `medium`, `high`, and `critical`. The default value is `low`. |
 | `main_branch` | The branch into which you want the pull requests created by the GitHub Action merged. |
 | `labels` | Add labels to the pull requests created by the GitHub Action. The labels need to be separated by a comma (`,`) and need to already exist. |

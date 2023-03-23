@@ -23,6 +23,9 @@ update_package () {
 version_ge() { 
     test "$(echo "$@" | tr " " "\n" | sort -rV | head -n 1)" == "$1"; 
 }
+version_gt() { 
+    test "$(echo "$@" | tr " " "\n" | sort -V | head -n 1)" != "$1"; 
+}
 
 high_critical_check_security_fix () {
     newDependencies=()
@@ -69,7 +72,7 @@ high_critical_check_security_fix () {
             tempDependencyTree=$(mvn dependency:tree -Dincludes="${array_alertGh[0]}" -Dverbose)
             tempFirstLevelDependencies=$(echo "$tempDependencyTree" | grep -e "\\\-" -e "\+\-" | grep -v -e "\s\s\\\-" -e "\s\s+\-" | cut -d "-" -f 2-100)
             if [[ "$INPUT_VERBOSE" == true ]]; then
-                echo "Checking available security updates for ${array_alertGh[0]}. Current: ${array_alertGh[3]}"
+                echo "Checking available security updates for ${array_alertGh[0]}. First patched version: ${array_alertGh[3]}"
                 echo "First-level dependencies for ${array_alertGh[0]}"
                 echo "$tempFirstLevelDependencies"
             fi
@@ -79,35 +82,150 @@ high_critical_check_security_fix () {
                     for ii in "${!firstLevelDependencies[@]}"; do
                         if [[ "${firstLevelDependencies[$ii]}" == *"$1"* ]]; then
                             if [[ ${ii} -eq ${#firstLevelDependencies[@]} ]]; then
-                                tempAfterUpdateVersions=$(echo "$tempDependencyTree" | sed -n "/${firstLevelDependencies[$ii]}/,//p" | grep -e "\\\-" -e "\+\-" | grep -e "${array_alertGh[0]}" | awk -F "${array_alertGh[0]}:jar:" '{print $2; printf $100}' | cut -f1 -d ":")
+                                firstLevDep=$(cut -d':' -f1-2 <<<"${firstLevelDependencies[$ii]}")
+                                tempAfterUpdateVersions=$(echo "$tempDependencyTree" | sed -n "/$firstLevDep/,//p" | grep -e "\\\-" -e "\+\-" | grep -e "${array_alertGh[0]}" | awk -F "${array_alertGh[0]}:jar:" '{print $2; printf $100}' | cut -f1 -d ":")
                                 if [[ "$INPUT_VERBOSE" == true ]]; then
-                                    echo "Latest versions for ${array_alertGh[0]} in $1"
+                                    echo "Versions after update for ${array_alertGh[0]} in $1"
                                     echo "$tempAfterUpdateVersions"
                                 fi                                
                                 IFS=$'\n' read -d '' -r -a AfterUpdateVersions <<< "$tempAfterUpdateVersions"
                                 for jj in "${!AfterUpdateVersions[@]}"; do
+                                    if [[ "$INPUT_VERBOSE" == true ]]; then
+                                        echo "${array_alertGh[0]} version_ge (AfterUpdateVersions > first_patched_version): ${AfterUpdateVersions[$jj]} >= ${array_alertGh[3]}"
+                                    fi 
                                     if (version_ge "${AfterUpdateVersions[$jj]}" "${array_alertGh[3]}"  && [[ ! "${newDependencies[*]}" == *"${array_alertGh[0]}|${AfterUpdateVersions[$j]}|"* ]]); then
-                                        newDependencies+=("${array_alertGh[0]}|${AfterUpdateVersions[$jj]}|")
                                         if [[ "$INPUT_VERBOSE" == true ]]; then
-                                            echo "${array_alertGh[0]}|${AfterUpdateVersions[$jj]}|"
+                                            echo "version_ge() passed"
+                                        fi 
+                                        tempPreviousDependencyTree=$(cd previous || exit; mvn dependency:tree -Dincludes="${array_alertGh[0]}" -Dverbose)
+                                        tempPreviousFirstLevelDependencies=$(echo "$tempPreviousDependencyTree" | grep -e "\\\-" -e "\+\-" | grep -v -e "\s\s\\\-" -e "\s\s+\-" | cut -d "-" -f 2-100)
+                                        if [[ "$INPUT_VERBOSE" == true ]]; then
+                                            echo "First-level dependencies for ${array_alertGh[0]} in /previous/pom.xml."
+                                            echo "$tempPreviousFirstLevelDependencies"
                                         fi
-                                        break
+                                        IFS=$'\n' read -d '' -r -a previousFirstLevelDependencies <<< "$tempPreviousFirstLevelDependencies"
+                                        for kk in "${!previousFirstLevelDependencies[@]}"; do
+                                            if [[ "$INPUT_VERBOSE" == true ]]; then
+                                                previousFirstLevDep=$(cut -d':' -f1-2 <<<"${previousFirstLevelDependencies[$kk]}")
+                                                echo "previousFirstLevelDependencies: $previousFirstLevDep"
+                                                echo "firstLevelDependencies: $firstLevDep"
+                                            fi
+                                            if [[ "$previousFirstLevDep" == "$firstLevDep" ]]; then
+                                                if [[ ${kk} -eq ${#previousFirstLevelDependencies[@]} ]]; then      
+                                                    tempBeforeUpdateVersions=$(echo "$tempPreviousDependencyTree" | sed -n "/$previousFirstLevDep/,//p" | grep -e "\\\-" -e "\+\-" | grep -e "${array_alertGh[0]}" | awk -F "${array_alertGh[0]}:jar:" '{print $2; printf $100}' | cut -f1 -d ":")
+                                                else
+                                                    previousFirstLevDepNext=$(cut -d':' -f1-2 <<<"${previousFirstLevelDependencies[(( $kk+1 ))]}")
+                                                    if [[ "$INPUT_VERBOSE" == true ]]; then
+                                                        echo "firstLevelDependenciesNext: $previousFirstLevDepNext"
+                                                    fi
+                                                    tempBeforeUpdateVersions=$(echo "$tempPreviousDependencyTree" | sed -n "/$previousFirstLevDep/,/$previousFirstLevDepNext/p" | sed '$d' | grep -e "\\\-" -e "\+\-" | grep -e "${array_alertGh[0]}" | awk -F "${array_alertGh[0]}:jar:" '{print $2; printf $100}' | cut -f1 -d ":")
+                                                fi
+                                                if [[ "$INPUT_VERBOSE" == true ]]; then
+                                                    echo "Versions for ${array_alertGh[0]} in $1 in previous/pom.xml"
+                                                    echo "$tempBeforeUpdateVersions"
+                                                fi                                
+                                                IFS=$'\n' read -d '' -r -a BeforeUpdateVersions <<< "$tempBeforeUpdateVersions"
+                                                if [[ "$INPUT_VERBOSE" == true ]]; then
+                                                    echo "Length BeforeUpdateVersions: ${#BeforeUpdateVersions[@]}"
+                                                    echo "Length AfterUpdateVersions: ${#AfterUpdateVersions[@]}"
+                                                fi
+                                                if [[ ${#BeforeUpdateVersions[@]} -eq ${#AfterUpdateVersions[@]} ]]; then
+                                                    if [[ "$INPUT_VERBOSE" == true ]]; then
+                                                        echo "${array_alertGh[0]} version_gt (first_patched_version > BeforeUpdateVersions): ${array_alertGh[3]} > ${BeforeUpdateVersions[$jj]}"
+                                                    fi 
+                                                    if version_gt "${array_alertGh[3]}" "${BeforeUpdateVersions[$jj]}"; then
+                                                        if [[ "$INPUT_VERBOSE" == true ]]; then
+                                                            echo "version_gt() passed"
+                                                        fi                                                         
+                                                        newDependencies+=("${array_alertGh[0]}|${AfterUpdateVersions[$jj]}|")
+                                                        if [[ "$INPUT_VERBOSE" == true ]]; then
+                                                            echo "${array_alertGh[0]}|${AfterUpdateVersions[$jj]}|"
+                                                        fi
+                                                        break 2
+                                                    fi
+                                                else
+                                                    newDependencies+=("${array_alertGh[0]}|${AfterUpdateVersions[$jj]}|")
+                                                    if [[ "$INPUT_VERBOSE" == true ]]; then
+                                                        echo "${array_alertGh[0]}|${AfterUpdateVersions[$jj]}|"
+                                                    fi
+                                                    break 2                                               
+                                                fi
+                                            fi
+                                        done
                                     fi
                                 done
                             else
-                                tempAfterUpdateVersions=$(echo "$tempDependencyTree" | sed -n "/${firstLevelDependencies[$ii]}/,/${firstLevelDependencies[(( $ii+1 ))]}/p" | sed '$d' | grep -e "\\\-" -e "\+\-" | grep -e "${array_alertGh[0]}" | awk -F "${array_alertGh[0]}:jar:" '{print $2; printf $100}' | cut -f1 -d ":")
+                                firstLevDep=$(cut -d':' -f1-2 <<<"${firstLevelDependencies[$ii]}")
+                                firstLevDepNext=$(cut -d':' -f1-2 <<<"${firstLevelDependencies[(( $ii+1 ))]}")
+                                tempAfterUpdateVersions=$(echo "$tempDependencyTree" | sed -n "/$firstLevDep/,/$firstLevDepNext/p" | sed '$d' | grep -e "\\\-" -e "\+\-" | grep -e "${array_alertGh[0]}" | awk -F "${array_alertGh[0]}:jar:" '{print $2; printf $100}' | cut -f1 -d ":")
                                 if [[ "$INPUT_VERBOSE" == true ]]; then
-                                    echo "Latest versions for ${array_alertGh[0]} in $1"
+                                    echo "Versions after update for ${array_alertGh[0]} in $1"
                                     echo "$tempAfterUpdateVersions"
                                 fi  
                                 IFS=$'\n' read -d '' -r -a AfterUpdateVersions <<< "$tempAfterUpdateVersions"
                                 for jj in "${!AfterUpdateVersions[@]}"; do
+                                    if [[ "$INPUT_VERBOSE" == true ]]; then
+                                        echo "${array_alertGh[0]} version_ge (AfterUpdateVersions > first_patched_version): ${AfterUpdateVersions[$jj]} >= ${array_alertGh[3]}"
+                                    fi  
                                     if (version_ge "${AfterUpdateVersions[$jj]}" "${array_alertGh[3]}" && [[ ! "${newDependencies[*]}" == *"${array_alertGh[0]}|${AfterUpdateVersions[$jj]}|"* ]]); then
-                                        newDependencies+=("${array_alertGh[0]}|${AfterUpdateVersions[$jj]}|")
                                         if [[ "$INPUT_VERBOSE" == true ]]; then
-                                            echo "${array_alertGh[0]}|${AfterUpdateVersions[$jj]}|"
+                                            echo "version_ge() passed"
+                                        fi                                         
+                                        tempPreviousDependencyTree=$(cd previous || exit; mvn dependency:tree -Dincludes="${array_alertGh[0]}" -Dverbose)
+                                        tempPreviousFirstLevelDependencies=$(echo "$tempPreviousDependencyTree" | grep -e "\\\-" -e "\+\-" | grep -v -e "\s\s\\\-" -e "\s\s+\-" | cut -d "-" -f 2-100)
+                                        if [[ "$INPUT_VERBOSE" == true ]]; then
+                                            echo "First-level dependencies for ${array_alertGh[0]} in /previous/pom.xml."
+                                            echo "$tempPreviousFirstLevelDependencies"
                                         fi
-                                        break
+                                        IFS=$'\n' read -d '' -r -a previousFirstLevelDependencies <<< "$tempPreviousFirstLevelDependencies"
+                                        for kk in "${!previousFirstLevelDependencies[@]}"; do
+                                            if [[ "$INPUT_VERBOSE" == true ]]; then
+                                                previousFirstLevDep=$(cut -d':' -f1-2 <<<"${previousFirstLevelDependencies[$kk]}")
+                                                echo "previousFirstLevelDependencies: $previousFirstLevDep"
+                                                echo "firstLevelDependencies: $firstLevDep"
+                                            fi
+                                            if [[ "$previousFirstLevDep" == "$firstLevDep" ]]; then
+                                                if [[ ${kk} -eq ${#previousFirstLevelDependencies[@]} ]]; then
+                                                    tempBeforeUpdateVersions=$(echo "$tempPreviousDependencyTree" | sed -n "/$previousFirstLevDep/,//p" | grep -e "\\\-" -e "\+\-" | grep -e "${array_alertGh[0]}" | awk -F "${array_alertGh[0]}:jar:" '{print $2; printf $100}' | cut -f1 -d ":")
+                                                else
+                                                    previousFirstLevDepNext=$(cut -d':' -f1-2 <<<"${previousFirstLevelDependencies[(( $kk+1 ))]}")
+                                                    if [[ "$INPUT_VERBOSE" == true ]]; then
+                                                        echo "firstLevelDependenciesNext: $previousFirstLevDepNext"
+                                                    fi
+                                                    tempBeforeUpdateVersions=$(echo "$tempPreviousDependencyTree" | sed -n "/$previousFirstLevDep/,/$previousFirstLevDepNext/p" | sed '$d' | grep -e "\\\-" -e "\+\-" | grep -e "${array_alertGh[0]}" | awk -F "${array_alertGh[0]}:jar:" '{print $2; printf $100}' | cut -f1 -d ":")
+                                                fi
+                                                if [[ "$INPUT_VERBOSE" == true ]]; then
+                                                    echo "Versions for ${array_alertGh[0]} in $1 in previous/pom.xml"
+                                                    echo "$tempBeforeUpdateVersions"
+                                                fi                                
+                                                IFS=$'\n' read -d '' -r -a BeforeUpdateVersions <<< "$tempBeforeUpdateVersions"
+                                                if [[ "$INPUT_VERBOSE" == true ]]; then
+                                                    echo "Length BeforeUpdateVersions: ${#BeforeUpdateVersions[@]}"
+                                                    echo "Length AfterUpdateVersions: ${#AfterUpdateVersions[@]}"
+                                                fi
+                                                if [[ ${#BeforeUpdateVersions[@]} -eq ${#AfterUpdateVersions[@]} ]]; then
+                                                    if [[ "$INPUT_VERBOSE" == true ]]; then
+                                                        echo "${array_alertGh[0]} version_gt (first_patched_version > BeforeUpdateVersions): ${array_alertGh[3]} > ${BeforeUpdateVersions[$jj]}"
+                                                    fi 
+                                                    if version_gt "${array_alertGh[3]}" "${BeforeUpdateVersions[$jj]}"; then
+                                                        if [[ "$INPUT_VERBOSE" == true ]]; then
+                                                            echo "version_gt() passed"
+                                                        fi
+                                                        newDependencies+=("${array_alertGh[0]}|${AfterUpdateVersions[$jj]}|")
+                                                        if [[ "$INPUT_VERBOSE" == true ]]; then
+                                                            echo "${array_alertGh[0]}|${AfterUpdateVersions[$jj]}|"
+                                                        fi
+                                                        break 2
+                                                    fi
+                                                else
+                                                    newDependencies+=("${array_alertGh[0]}|${AfterUpdateVersions[$jj]}|")
+                                                    if [[ "$INPUT_VERBOSE" == true ]]; then
+                                                        echo "${array_alertGh[0]}|${AfterUpdateVersions[$jj]}|"
+                                                    fi
+                                                    break 2                                               
+                                                fi
+                                            fi
+                                        done
                                     fi
                                 done
                             fi
@@ -192,6 +310,12 @@ do
         pomManifestPath="$cljdir/projectclj" || exit
     else
         pomManifestPath="$cljdir/depsedn" || exit
+    fi
+    mkdir "/${pomManifestPath:1}/previous"
+    cp "/${pomManifestPath:1}/pom.xml" "/${pomManifestPath:1}/previous/pom.xml"
+    if [[ "$INPUT_VERBOSE" == true ]]; then
+        echo "Copy pom.xml to folder 'previous'"
+        ls "/${pomManifestPath:1}/previous"
     fi
     if [[ "$INPUT_VERBOSE" == true ]]; then
         echo "Checking GitHub Security alerts for $i"
