@@ -6,7 +6,7 @@ dependency_tree_summary () {
         cat dependency-tree.txt
     fi
     {
-        echo "### $INPUT_DIRECTORY$i"
+        echo "### $INPUT_DIRECTORY$1"
         echo "<details>"
         echo ""
         echo "\`\`\`"
