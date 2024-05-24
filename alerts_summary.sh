@@ -1,7 +1,7 @@
 #!/bin/bash
 
 dependency_tree_summary () {
-    mvn dependency:tree -Dverbose=true -DoutputFile="dependency-tree.txt"
+    mvn -ntp dependency:tree -Dverbose=true -DoutputFile="dependency-tree.txt"
     if [[ "$INPUT_VERBOSE" == true ]]; then
         cat dependency-tree.txt
     fi
@@ -23,7 +23,7 @@ vulnerabilities_summary () {
     do
         IFS='|' read -r -a array_i <<< "$i" 
         cd "/${1/'pom.xml'/''}" || exit
-        dep_level=$(mvn dependency:tree -DoutputType=dot -Dincludes="${array_i[1]}" | grep -e "->" | cut -d ">" -f 2 | cut -d '"' -f 2 | cut -d ":" -f 1-2)
+        dep_level=$(mvn -ntp dependency:tree -DoutputType=dot -Dincludes="${array_i[1]}" | grep -e "->" | cut -d ">" -f 2 | cut -d '"' -f 2 | cut -d ":" -f 1-2)
         IFS=' ' read -r -a dependency_level <<< "$dep_level"
         array_i+=("${dependency_level[0]}")
         table_row="| "
