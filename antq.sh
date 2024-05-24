@@ -44,7 +44,7 @@ high_critical_check_security_fix () {
                 echo "Update omitted packages: false"
             fi   
             if [[ "${array_alertGh[4]}" == "$1" ]]; then
-                afterUpdateVersion=$(mvn dependency:tree -DoutputType=dot -Dincludes="${array_alertGh[0]}" | grep -e "->" | cut -d ">" -f 2 | cut -d '"' -f 2 | grep -e "${array_alertGh[0]}" | cut -d ":" -f 4)
+                afterUpdateVersion=$(mvn -ntp dependency:tree -DoutputType=dot -Dincludes="${array_alertGh[0]}" | grep -e "->" | cut -d ">" -f 2 | cut -d '"' -f 2 | grep -e "${array_alertGh[0]}" | cut -d ":" -f 4)
                 if [[ "$INPUT_VERBOSE" == true ]]; then
                     echo "Checking available security updates for ${array_alertGh[0]}. Current: ${array_alertGh[3]} Latest: $afterUpdateVersion"
                 fi
@@ -69,7 +69,7 @@ high_critical_check_security_fix () {
             if [[ "$INPUT_VERBOSE" == true ]]; then
                 echo "Update omitted packages: true"
             fi
-            tempDependencyTree=$(mvn dependency:tree -Dincludes="${array_alertGh[0]}" -Dverbose)
+            tempDependencyTree=$(mvn -ntp dependency:tree -Dincludes="${array_alertGh[0]}" -Dverbose)
             tempFirstLevelDependencies=$(echo "$tempDependencyTree" | grep -e "\\\-" -e "\+\-" | grep -v -e "\s\s\\\-" -e "\s\s+\-" | cut -d "-" -f 2-100)
             if [[ "$INPUT_VERBOSE" == true ]]; then
                 echo "Checking available security updates for ${array_alertGh[0]}. First patched version: ${array_alertGh[3]}"
@@ -97,7 +97,7 @@ high_critical_check_security_fix () {
                                         if [[ "$INPUT_VERBOSE" == true ]]; then
                                             echo "version_ge() passed"
                                         fi 
-                                        tempPreviousDependencyTree=$(cd previous || exit; mvn dependency:tree -Dincludes="${array_alertGh[0]}" -Dverbose)
+                                        tempPreviousDependencyTree=$(cd previous || exit; mvn -ntp dependency:tree -Dincludes="${array_alertGh[0]}" -Dverbose)
                                         tempPreviousFirstLevelDependencies=$(echo "$tempPreviousDependencyTree" | grep -e "\\\-" -e "\+\-" | grep -v -e "\s\s\\\-" -e "\s\s+\-" | cut -d "-" -f 2-100)
                                         if [[ "$INPUT_VERBOSE" == true ]]; then
                                             echo "First-level dependencies for ${array_alertGh[0]} in /previous/pom.xml."
@@ -171,7 +171,7 @@ high_critical_check_security_fix () {
                                         if [[ "$INPUT_VERBOSE" == true ]]; then
                                             echo "version_ge() passed"
                                         fi                                         
-                                        tempPreviousDependencyTree=$(cd previous || exit; mvn dependency:tree -Dincludes="${array_alertGh[0]}" -Dverbose)
+                                        tempPreviousDependencyTree=$(cd previous || exit; mvn -ntp dependency:tree -Dincludes="${array_alertGh[0]}" -Dverbose)
                                         tempPreviousFirstLevelDependencies=$(echo "$tempPreviousDependencyTree" | grep -e "\\\-" -e "\+\-" | grep -v -e "\s\s\\\-" -e "\s\s+\-" | cut -d "-" -f 2-100)
                                         if [[ "$INPUT_VERBOSE" == true ]]; then
                                             echo "First-level dependencies for ${array_alertGh[0]} in /previous/pom.xml."
@@ -337,10 +337,10 @@ do
         fi
         if [[ "$severityLevel" == *"${array_vulnPackage[1]}"* ]]; then
             cd "$pomManifestPath" || exit
-            dep_level=$(mvn dependency:tree -DoutputType=dot -Dincludes="${array_vulnPackage[0]}" | grep -e "->" | cut -d ">" -f 2 | cut -d '"' -f 2 | cut -d ":" -f 1-2)
+            dep_level=$(mvn -ntp dependency:tree -DoutputType=dot -Dincludes="${array_vulnPackage[0]}" | grep -e "->" | cut -d ">" -f 2 | cut -d '"' -f 2 | cut -d ":" -f 1-2)
             IFS=' ' read -r -a dependency_level <<< "$dep_level"
             vulPackage+="${dependency_level[0]}|"
-            tempFirstLevelDependencies=$(mvn dependency:tree -Dincludes="${array_vulnPackage[0]}" -Dverbose | grep -e "\\\-" -e "\+\-" | grep -v -e "\s\s\\\-" -e "\s\s+\-" | cut -d "-" -f 2-100)
+            tempFirstLevelDependencies=$(mvn -ntp dependency:tree -Dincludes="${array_vulnPackage[0]}" -Dverbose | grep -e "\\\-" -e "\+\-" | grep -v -e "\s\s\\\-" -e "\s\s+\-" | cut -d "-" -f 2-100)
             IFS=$'\n' read -d '' -r -a firstLevelDependencies <<< "$tempFirstLevelDependencies"
             vulPackage+="${firstLevelDependencies[*]}|"
             githubAlerts+=("$vulPackage")
