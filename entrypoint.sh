@@ -1,6 +1,19 @@
 #!/bin/bash
 set -e
 
+echo "Running entrypoint for Clojure Dependabot..."
+echo "Setting up SSH keys..."
+
+# Ensure .ssh directory exists
+mkdir -p /root/.ssh
+
+# Add SSH private key from environment variables (GitHub Actions Secrets)
+echo "$SERVICE_ACCOUNT_PRIVATE_KEY" > /root/.ssh/id_rsa
+chmod 600 /root/.ssh/id_rsa
+
+# Add GitHub to known hosts
+ssh-keyscan -p 443 ssh.github.com >> /root/.ssh/known_hosts
+
 # Unsafe decision to fix https://github.com/actions/runner/issues/2033
 git config --global --add safe.directory "$GITHUB_WORKSPACE"
 git config --global user.email "github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"
