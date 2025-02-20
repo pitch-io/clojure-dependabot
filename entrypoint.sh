@@ -14,6 +14,14 @@ chmod 600 /root/.ssh/id_rsa
 # Add GitHub to known hosts
 ssh-keyscan -p 443 ssh.github.com >> /root/.ssh/known_hosts
 
+cat <<EOF > /root/.ssh/config
+Host github.com
+  IdentityFile /root/.ssh/id_rsa
+  StrictHostKeyChecking no
+EOF
+
+chmod 600 /root/.ssh/config
+
 # Unsafe decision to fix https://github.com/actions/runner/issues/2033
 git config --global --add safe.directory "$GITHUB_WORKSPACE"
 git config --global user.email "github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"
