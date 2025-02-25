@@ -2,20 +2,20 @@
   (:require [clojure.data.xml :as xml]
             [clojure.tools.deps.tree :as tree]))
 
-(defn effective-deps [project-dir]
-  (let [trace (tree/calc-trace {:dir project-dir})
-        tree  (tree/trace->tree trace)]
-    (->> tree
-         (tree-seq :children (fn [{:keys [children]}]
-                               (map
-                                (fn [k v]
-                                  (assoc v :name k))
-                                (keys children)
-                                (vals children))))
-         (rest)
-         (map #(dissoc % :children))
-         (remove #(-> % :coord :git/url))
-         (filter :include))))
+(defn effective-deps [_project-dir]
+    (let [trace (read-string (slurp "trace.edn"))
+          tree  (tree/trace->tree trace)]
+      (->> tree
+           (tree-seq :children (fn [{:keys [children]}]
+                                 (map
+                                  (fn [k v]
+                                    (assoc v :name k))
+                                  (keys children)
+                                  (vals children))))
+           (rest)
+           (map #(dissoc % :children))
+           (remove #(-> % :coord :git/url))
+           (filter :include))))
 
 (defn deps->pom [deps destination]
   (let [tags (xml/element
@@ -62,14 +62,45 @@
     (with-open [out-file (java.io.FileWriter. destination)]
       (xml/emit tags out-file))))
 
-
 ;; example - note the escaping of the quotes. WEIRD
 ;; clojure -X pom-generator/generate-pom :path \"/home/ryan/lc/utwig\"
 
+;; clojure -A:app -Strace
 ;; clojure -Sdeps \{\:deps\ \{org.clojure/tools.deps\ \{\:mvn/version\ \"0.22.1492\"\}\ org.clojure/data.xml\ \{\:mvn/version\ \"0.0.8\"\}\}\ \:paths\ \[\"pom-generator\"\]\} -X pom-generator/generate-pom :path \"/home/ryan/lc/utwig\"
-(defn generate-pom [{:keys [path]}]
-  (->  path
+(defn generate-pom [{:keys [_path]}]
+  (->  _path
        effective-deps
        (deps->pom "pom.xml")))
 
+(comment
+  (def project-dir "/home/ryan/lc/utwig")
+  (def ed (effective-deps project-dir))
+  (-> ed)
 
+  (def trace (tree/calc-trace {:dir project-dir}))
+  (def tree  (tree/trace->tree trace))
+
+  (-> tree
+      keys)
+
+  (def trace
+    (read-string (slurp "/home/ryan/lc/utwig/trace.edn")))
+
+  (-> trace
+      ;;keys
+      :log
+      ;;:vmap;; seems to be about versions
+);;<<groundhog
+
+  (def trace (read-string (slurp "/home/ryan/lc/utwig/trace.edn")))
+
+  (def tree (tree/trace->tree trace))
+  tree
+
+  
+
+  (def deps  (effective-deps trace))
+(deps->pom deps "pom2.xml")
+
+
+:.)

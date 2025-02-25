@@ -45,9 +45,17 @@ do
 
       echo "ls -lah /github/workspace/pom-generator"
       ls -lah /github/workspace/pom-generator
+
+      echo "clojure -A:app -Strace"
+      clojure -A:app -Strace
       
-      
+      echo "generating the pom.xml file"
         clojure -Sdeps \{\:deps\ \{org.clojure/tools.deps\ \{\:mvn/version\ \"0.22.1492\"\}\ org.clojure/data.xml\ \{\:mvn/version\ \"0.0.8\"\}\}\ \:paths\ \[\"pom-generator\"\]\} -X pom-generator/generate-pom :path \"$cljdir\"
+
+        echo "ls -lah (we should expect to see trace.edn and pom.xml files here)"
+        ls -lah
+
+        
         mkdir depsedn
         mv pom.xml depsedn/
         maven-dependency-submission-linux-x64 --token "$GITHUB_TOKEN" --repository "$GITHUB_REPOSITORY" --branch-ref "$GITHUB_REF" --sha "$GITHUB_SHA" --directory "${cljdir}/depsedn" --job-name "${INPUT_DIRECTORY}${i}/depsedn"
