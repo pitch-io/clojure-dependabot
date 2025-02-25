@@ -36,6 +36,8 @@ do
     else
         #clojure -X:deps mvn-pom
       echo "!!!!!!!!!! RUNNING POM-GENERATOR !!!!!!!!!!!!!!!!"
+      pwd
+      ls -lah 
       ls -lah pom-generator
       
         clojure -Sdeps \{\:deps\ \{org.clojure/tools.deps\ \{\:mvn/version\ \"0.22.1492\"\}\ org.clojure/data.xml\ \{\:mvn/version\ \"0.0.8\"\}\}\ \:paths\ \[\"pom-generator\"\]\} -X pom-generator/generate-pom :path \"$cljdir\"
