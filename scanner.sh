@@ -35,17 +35,13 @@ do
         maven-dependency-submission-linux-x64 --token "$GITHUB_TOKEN" --repository "$GITHUB_REPOSITORY" --branch-ref "$GITHUB_REF" --sha "$GITHUB_SHA" --directory "${cljdir}/projectclj" --job-name "${INPUT_DIRECTORY}${i}/projectclj"
     else
         #clojure -X:deps mvn-pom
-      echo ".!!!!!!!!! RUNNING POM-GENERATOR !!!!!!!!!!!!!!!!"
-      echo "pwd:"
-      pwd
-      echo "ls -lah"
-      ls -lah
-      echo "ls -lah pom-generator"
-      ls -lah pom-generator
+      echo "..!!!!!!!!! RUNNING POM-GENERATOR !!!!!!!!!!!!!!!!"
       echo "ls -lah /"
       ls -lah /
-      echo "echo testing >> /github/workspace/test-file.txt"
-      echo "testing" >> /github/workspace/test-file.txt
+      echo "mkdir pom-generator"
+      mkdir pom-generator
+      echo "cp /github/workspace/pom-generotor.clj /github/workspace/pom-generator/pom-generator.clj"
+      cp /pom-generotor.clj pom-generator/pom-generator.clj
 
       echo "ls -lah /github/workspace"
       ls -lah /github/workspace
