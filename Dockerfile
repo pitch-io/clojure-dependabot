@@ -32,6 +32,8 @@ COPY antq.sh /antq.sh
 
 COPY entrypoint.sh /entrypoint.sh
 
+COPY pom-generator/ /pom-generator/
+
 RUN chmod +x /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
