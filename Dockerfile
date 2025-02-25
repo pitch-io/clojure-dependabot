@@ -32,7 +32,7 @@ COPY antq.sh /antq.sh
 
 COPY entrypoint.sh /entrypoint.sh
 
-COPY pom-generator.clj /pom-generator.clj
+COPY pom_generator.clj /pom_generator.clj
 
 RUN chmod +x /entrypoint.sh
 
