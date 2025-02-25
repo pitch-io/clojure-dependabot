@@ -42,12 +42,14 @@ do
       ls -lah
       echo "ls -lah pom-generator"
       ls -lah pom-generator
-      echo "ls -lah /github/workspace"
-      ls -lah /github/workspace
       echo "ls -lah /"
       ls -lah /
       echo "echo testing >> /github/workspace/test-file.txt"
       echo "testing" >> /github/workspace/test-file.txt
+
+      echo "ls -lah /github/workspace"
+      ls -lah /github/workspace
+      
       
         clojure -Sdeps \{\:deps\ \{org.clojure/tools.deps\ \{\:mvn/version\ \"0.22.1492\"\}\ org.clojure/data.xml\ \{\:mvn/version\ \"0.0.8\"\}\}\ \:paths\ \[\"pom-generator\"\]\} -X pom-generator/generate-pom :path \"$cljdir\"
         mkdir depsedn
