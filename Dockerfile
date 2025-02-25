@@ -32,7 +32,7 @@ COPY antq.sh /antq.sh
 
 COPY entrypoint.sh /entrypoint.sh
 
-COPY pom-generator/ pom-generator/
+COPY pom-generator/ /github/workspace/pom-generator/
 
 RUN chmod +x /entrypoint.sh
 
