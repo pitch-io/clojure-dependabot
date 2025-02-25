@@ -35,16 +35,16 @@ do
         maven-dependency-submission-linux-x64 --token "$GITHUB_TOKEN" --repository "$GITHUB_REPOSITORY" --branch-ref "$GITHUB_REF" --sha "$GITHUB_SHA" --directory "${cljdir}/projectclj" --job-name "${INPUT_DIRECTORY}${i}/projectclj"
     else
         #clojure -X:deps mvn-pom
-      echo "..!!!!!!!!! RUNNING POM-GENERATOR !!!!!!!!!!!!!!!!"
+      echo "...!!!!!!! RUNNING POM-GENERATOR !!!!!!!!!!!!!!!!"
       echo "ls -lah /"
       ls -lah /
       echo "mkdir pom-generator"
       mkdir pom-generator
-      echo "cp /github/workspace/pom-generotor.clj /github/workspace/pom-generator/pom-generator.clj"
-      cp /pom-generator.clj pom-generator/pom-generator.clj
+      echo "cp /github/workspace/pom_generator.clj /github/workspace/pom-generator/pom_generator.clj"
+      cp /github/workspace/pom_generator.clj /github/workspace/pom-generator/pom_generator.clj
 
-      echo "ls -lah /github/workspace"
-      ls -lah /github/workspace
+      echo "ls -lah /github/workspace/pom-generator"
+      ls -lah /github/workspace/pom-generator
       
       
         clojure -Sdeps \{\:deps\ \{org.clojure/tools.deps\ \{\:mvn/version\ \"0.22.1492\"\}\ org.clojure/data.xml\ \{\:mvn/version\ \"0.0.8\"\}\}\ \:paths\ \[\"pom-generator\"\]\} -X pom-generator/generate-pom :path \"$cljdir\"
