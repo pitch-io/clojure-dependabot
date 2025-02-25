@@ -40,8 +40,8 @@ do
       ls -lah /
       echo "mkdir pom-generator"
       mkdir pom-generator
-      echo "cp /github/workspace/pom_generator.clj /github/workspace/pom-generator/pom_generator.clj"
-      cp /github/workspace/pom_generator.clj /github/workspace/pom-generator/pom_generator.clj
+      echo "cp /pom_generator.clj /github/workspace/pom-generator/pom_generator.clj"
+      cp /pom_generator.clj /github/workspace/pom-generator/pom_generator.clj
 
       echo "ls -lah /github/workspace/pom-generator"
       ls -lah /github/workspace/pom-generator
