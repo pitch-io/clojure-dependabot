@@ -47,6 +47,7 @@ do
       ls -lah /github/workspace/pom-generator
 
       echo "clojure -A:app -Strace"
+      clojure -X:deps prep
       clojure -A:app -Strace
       
       echo "generating the pom.xml file"
