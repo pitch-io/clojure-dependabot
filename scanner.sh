@@ -29,23 +29,33 @@ do
     cljdir=$GITHUB_WORKSPACE$INPUT_DIRECTORY${i//\/$1}
     cd "$cljdir" || exit
     if  [[ $1 == "project.clj" ]]; then
-
-      echo "!!!!!!!!!!!!!! INPUT VARIABLES !!!!!!!!!!!!!!!!!!!!!"
-      echo "GITHUB_REPOSITORY: ${GITHUB_REPOSITORY}"
-      echo "GITHUB_REF: ${GITHUB_REF}"
-
-      
         lein pom
         mkdir projectclj
         mv pom.xml projectclj/
         maven-dependency-submission-linux-x64 --token "$GITHUB_TOKEN" --repository "$GITHUB_REPOSITORY" --branch-ref "$GITHUB_REF" --sha "$GITHUB_SHA" --directory "${cljdir}/projectclj" --job-name "${INPUT_DIRECTORY}${i}/projectclj"
     else
+        #clojure -X:deps mvn-pom
+      echo "...!!!!!!! RUNNING POM-GENERATOR !!!!!!!!!!!!!!!!"
+      echo "ls -lah /"
+      ls -lah /
+      echo "mkdir pom-generator"
       mkdir pom-generator
+      echo "cp /pom_generator.clj /github/workspace/pom-generator/pom_generator.clj"
       cp /pom_generator.clj /github/workspace/pom-generator/pom_generator.clj
+
+      echo "ls -lah /github/workspace/pom-generator"
+      ls -lah /github/workspace/pom-generator
+
+      echo "clojure -A:app -Strace"
       clojure -X:deps prep
       clojure -A:app -Strace
+      
+      echo "generating the pom.xml file"
+        clojure -Sdeps \{\:deps\ \{org.clojure/tools.deps\ \{\:mvn/version\ \"0.22.1492\"\}\ org.clojure/data.xml\ \{\:mvn/version\ \"0.0.8\"\}\}\ \:paths\ \[\"pom-generator\"\]\} -X pom-generator/generate-pom :path \"$cljdir\"
 
-      clojure -Sdeps \{\:deps\ \{org.clojure/tools.deps\ \{\:mvn/version\ \"0.22.1492\"\}\ org.clojure/data.xml\ \{\:mvn/version\ \"0.0.8\"\}\}\ \:paths\ \[\"pom-generator\"\]\} -X pom-generator/generate-pom :repository \"$GITHUB_REPOSITORY\"
+        echo "ls -lah (we should expect to see trace.edn and pom.xml files here)"
+        ls -lah
+
         
         mkdir depsedn
         mv pom.xml depsedn/
