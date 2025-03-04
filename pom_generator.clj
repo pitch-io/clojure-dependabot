@@ -2,7 +2,7 @@
   (:require [clojure.data.xml :as xml]
             [clojure.tools.deps.tree :as tree]))
 
-(defn effective-deps [_project-dir]
+(defn effective-deps []
     (let [trace (read-string (slurp "trace.edn"))
           tree  (tree/trace->tree trace)]
       (->> tree
@@ -22,17 +22,17 @@
                (xml/element :groupId {} (str (namespace exclusion)))
                (xml/element :artifactId {} (str (name exclusion)))))
 
-(defn deps->pom [deps destination]
+(defn deps->pom [deps repository destination]
   (let [tags (xml/element
                :project {:xmlns "http://maven.apache.org/POM/4.0.0"
                          :xmlns:xsi "http://www.w3.org/2001/XMLSchema-instance"
                          :xsi:schemaLocation "http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd"}
                (xml/element :modelVersion {} "4.0.0")
                (xml/element :packaging {} "jar")
-               (xml/element :groupId {} "utwig")
-               (xml/element :artifactId {} "utwig")
+               (xml/element :groupId {} repository)
+               (xml/element :artifactId {} repository)
                (xml/element :version {} "0.1.0")
-               (xml/element :name {} "utwig")
+               (xml/element :name {} repository)
                (xml/element
                  :dependencies {}
                  (for [{dep-name :lib :as dep} deps]
@@ -70,45 +70,20 @@
     (with-open [out-file (java.io.FileWriter. destination)]
       (xml/emit tags out-file))))
 
-;; example - note the escaping of the quotes. WEIRD
-;; clojure -X pom-generator/generate-pom :path \"/home/ryan/lc/utwig\"
-
-;; clojure -A:app -Strace
-;; clojure -Sdeps \{\:deps\ \{org.clojure/tools.deps\ \{\:mvn/version\ \"0.22.1492\"\}\ org.clojure/data.xml\ \{\:mvn/version\ \"0.0.8\"\}\}\ \:paths\ \[\"pom-generator\"\]\} -X pom-generator/generate-pom :path \"/home/ryan/lc/utwig\"
-(defn generate-pom [{:keys [_path]}]
-  (->  _path
-       effective-deps
-       (deps->pom "pom.xml")))
+(defn generate-pom [{:keys [repository]}]
+  (->
+   (effective-deps)
+   (deps->pom repository "pom.xml")))
 
 (comment
-  (def project-dir "/home/ryan/lc/utwig")
-  (def ed (effective-deps project-dir))
-  (-> ed)
-
-  (def trace (tree/calc-trace {:dir project-dir}))
-  (def tree  (tree/trace->tree trace))
-
-  (-> tree
-      keys)
-
-  (def trace
-    (read-string (slurp "/home/ryan/lc/utwig/trace.edn")))
-
-  (-> trace
-      ;;keys
-      :log
-      ;;:vmap;; seems to be about versions
-);;<<groundhog
-
-  (def trace (read-string (slurp "/home/ryan/lc/utwig/trace.edn")))
-
-  (def tree (tree/trace->tree trace))
-  tree
-
+  ;; Testing this is relatively easy:
+  ;; copy this file into utwig/pom-generator/pom_generator.clj (or whichever project you want)
+  ;; (so - pom-generator is in the same level as src, src-shared etc.)
+  ;; in terminal (in the root directory of the project) run:
+  ;; clojure -X:deps prep
+  ;; clojure -A:app -Strace
+  ;; ^ these generate a trace.edn file
+  ;; then execute (replace $GITHUB_REPOSITORY with some text you like
+  ;;       clojure -Sdeps \{\:deps\ \{org.clojure/tools.deps\ \{\:mvn/version\ \"0.22.1492\"\}\ org.clojure/data.xml\ \{\:mvn/version\ \"0.0.8\"\}\}\ \:paths\ \[\"pom-generator\"\]\} -X pom-generator/generate-pom :repository \"$GITHUB_REPOSITORY\"
   
-
-  (def deps  (effective-deps trace))
-(deps->pom deps "pom2.xml")
-
-
-:.)
+  :.)
