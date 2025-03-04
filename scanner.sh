@@ -34,28 +34,20 @@ do
         mv pom.xml projectclj/
         maven-dependency-submission-linux-x64 --token "$GITHUB_TOKEN" --repository "$GITHUB_REPOSITORY" --branch-ref "$GITHUB_REF" --sha "$GITHUB_SHA" --directory "${cljdir}/projectclj" --job-name "${INPUT_DIRECTORY}${i}/projectclj"
     else
-        #clojure -X:deps mvn-pom
-      echo "...!!!!!!! RUNNING POM-GENERATOR !!!!!!!!!!!!!!!!"
-      echo "ls -lah /"
-      ls -lah /
-      echo "mkdir pom-generator"
-      mkdir pom-generator
-      echo "cp /pom_generator.clj /github/workspace/pom-generator/pom_generator.clj"
-      cp /pom_generator.clj /github/workspace/pom-generator/pom_generator.clj
+        echo "!!!!!!!!!!!!!! INPUT VARIABLES !!!!!!!!!!!!!!!!!!!!!"
+        echo "GITHUB_REPOSITORY: ${GITHUB_REPOSITORY}"
+        echo "GITHUB_REF: ${GITHUB_REF}"
 
-      echo "ls -lah /github/workspace/pom-generator"
-      ls -lah /github/workspace/pom-generator
-
-      echo "clojure -A:app -Strace"
-      clojure -X:deps prep
-      clojure -A:app -Strace
+        # just a bit of hackery to get just the "utwig" out of "lifecheq/utwig"
+        s="/${GITHUB_REPOSITORY}"
+        repo="${s##/*/}"
       
-      echo "generating the pom.xml file"
-        clojure -Sdeps \{\:deps\ \{org.clojure/tools.deps\ \{\:mvn/version\ \"0.22.1492\"\}\ org.clojure/data.xml\ \{\:mvn/version\ \"0.0.8\"\}\}\ \:paths\ \[\"pom-generator\"\]\} -X pom-generator/generate-pom :path \"$cljdir\"
+        mkdir pom-generator
+        cp /pom_generator.clj /github/workspace/pom-generator/pom_generator.clj
+        clojure -X:deps prep
+        clojure -A:app -Strace
 
-        echo "ls -lah (we should expect to see trace.edn and pom.xml files here)"
-        ls -lah
-
+        clojure -Sdeps \{\:deps\ \{org.clojure/tools.deps\ \{\:mvn/version\ \"0.22.1492\"\}\ org.clojure/data.xml\ \{\:mvn/version\ \"0.0.8\"\}\}\ \:paths\ \[\"pom-generator\"\]\} -X pom-generator/generate-pom :repository \"$repo\"
         
         mkdir depsedn
         mv pom.xml depsedn/
