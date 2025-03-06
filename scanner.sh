@@ -44,10 +44,11 @@ do
       
         mkdir pom-generator
         cp /pom_generator.clj /github/workspace/pom-generator/pom_generator.clj
+        cp /deps.edn /github/workspace/pom-generator/deps.edn
         clojure -X:deps prep
         clojure -A:app -Strace
 
-        clojure -Sdeps \{\:deps\ \{org.clojure/tools.deps\ \{\:mvn/version\ \"0.22.1492\"\}\ org.clojure/data.xml\ \{\:mvn/version\ \"0.0.8\"\}\}\ \:paths\ \[\"pom-generator\"\]\} -X pom-generator/generate-pom :repository \"$repo\"
+        clojure -X pom-generator/generate-pom :repository \"$repo\"
         
         mkdir depsedn
         mv pom.xml depsedn/
