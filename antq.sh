@@ -30,6 +30,8 @@ version_gt() {
 high_critical_check_security_fix () {
     newDependencies=()
     tempGhAlerts=("$@")
+    echo "${tempGhAlerts[@]:2}"
+    echo "$2"
     cd "$2" || exit
     for alertGh in "${tempGhAlerts[@]:2}"
     do
