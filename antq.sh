@@ -30,6 +30,7 @@ version_gt() {
 high_critical_check_security_fix () {
     newDependencies=()
     tempGhAlerts=("$@")
+    echo "Debug antq bug"
     echo "${tempGhAlerts[@]:2}"
     echo "$2"
     cd "$2" || exit
