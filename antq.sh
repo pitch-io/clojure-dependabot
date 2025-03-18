@@ -334,27 +334,59 @@ do
     manifest_path="${pomManifestPath:1}/pom.xml"
     echo "📂 Expected MANIFEST path: $manifest_path"
 
-    # Test if MANIFEST exists in the JSON
     echo "🔎 Checking if MANIFEST exists in JSON..."
-    jq -r --arg MANIFEST "$manifest_path" '.[] | select(.dependency.manifest_path == $MANIFEST)' <<< "$vul_page" || echo "⚠️ No matching manifest path found!"
 
-    # Run jq without mapfile first to see if it returns anything
+    # Print the expected manifest path and JSON keys at the top level for context
+    echo "📂 Expected MANIFEST path: $manifest_path"
+    echo "📜 JSON top-level keys (for structure verification):"
+    jq 'keys' <<< "$vul_page" || echo "⚠️ JSON might not be an array!"
+
+    # Print all `dependency.manifest_path` values to see what exists in the JSON
+    echo "📜 Available manifest paths in JSON:"
+    jq -r '.[].dependency.manifest_path' <<< "$vul_page" | sort | uniq
+
+    # Test if MANIFEST exists in JSON
+    jq -r --arg MANIFEST "$manifest_path" '.[] | select(.dependency.manifest_path == $MANIFEST)' <<< "$vul_page" | tee /tmp/debug_manifest.json
+    if [[ ! -s /tmp/debug_manifest.json ]]; then
+        echo "⚠️ No matching manifest path found in JSON!"
+    else
+        echo "✅ Found matching manifest path!"
+        cat /tmp/debug_manifest.json | jq '.' | head -n 20  # Print first 20 lines
+    fi
+
     echo "🛠 Running jq command separately for testing..."
     jq -r --arg MANIFEST "$manifest_path" \
-    '.[] | select(.dependency.manifest_path == $MANIFEST and .state == "open") | .security_vulnerability.package.name + "|" + .security_vulnerability.severity + "|" + .security_advisory.ghsa_id + "|" + (.security_vulnerability.first_patched_version.identifier // "N/A") + "|"' <<< "$vul_page"
+    '.[] | select(.dependency.manifest_path == $MANIFEST and .state == "open") | 
+    .security_vulnerability.package.name + "|" + 
+    .security_vulnerability.severity + "|" + 
+    .security_advisory.ghsa_id + "|" + 
+    (.security_vulnerability.first_patched_version.identifier // "N/A") + "|"' <<< "$vul_page" | tee /tmp/debug_jq_output.txt
 
-    # Store results in array with debug output
+    if [[ ! -s /tmp/debug_jq_output.txt ]]; then
+        echo "⚠️ JQ command returned no results! Check JSON structure."
+    else
+        echo "✅ JQ command output:"
+        cat /tmp/debug_jq_output.txt | head -n 10  # Show first 10 lines
+    fi
+
     echo "📌 Storing results in tempGithubAlerts array..."
     mapfile -t tempGithubAlerts < <(jq -r --arg MANIFEST "$manifest_path" \
-    '.[] | select(.dependency.manifest_path == $MANIFEST and .state == "open") | .security_vulnerability.package.name + "|" + .security_vulnerability.severity + "|" + .security_advisory.ghsa_id + "|" + (.security_vulnerability.first_patched_version.identifier // "N/A") + "|"' <<< "$vul_page")
+    '.[] | select(.dependency.manifest_path == $MANIFEST and .state == "open") | 
+    .security_vulnerability.package.name + "|" + 
+    .security_vulnerability.severity + "|" + 
+    .security_advisory.ghsa_id + "|" + 
+    (.security_vulnerability.first_patched_version.identifier // "N/A") + "|"' <<< "$vul_page")
 
     # Check if the array is empty
     if [ ${#tempGithubAlerts[@]} -eq 0 ]; then
-        echo "⚠️ tempGithubAlerts is empty! Something went wrong."
+        echo "⚠️ tempGithubAlerts is empty! Dumping more debug info..."
+        echo "📜 JSON sample (first 50 lines):"
+        echo "$vul_page" | jq '.' | head -n 50
     else
         echo "✅ tempGithubAlerts contains ${#tempGithubAlerts[@]} entries."
         printf '%s\n' "${tempGithubAlerts[@]}"  # Print each entry for debugging
     fi
+
     
     mapfile -t tempGithubAlerts < <(jq -r --arg MANIFEST "${pomManifestPath:1}/pom.xml" '.[] | select(.dependency.manifest_path == $MANIFEST and .state == "open") | .security_vulnerability.package.name + "|" + .security_vulnerability.severity + "|" + .security_advisory.ghsa_id + "|" + .security_vulnerability.first_patched_version.identifier + "|"' <<< "${vul_page}")
     echo "Debug antq bug #5"
