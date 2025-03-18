@@ -324,6 +324,38 @@ do
     if [[ "$INPUT_VERBOSE" == true ]]; then
         echo "Checking GitHub Security alerts for $i"
     fi
+
+    echo "🔍 Debugging GitHub Action Script..."
+    # Print the raw JSON content (limit to avoid excessive logs)
+    echo "📜 Printing a snippet of vul_page JSON..."
+    echo "$vul_page" | jq '.' | head -n 50 || echo "⚠️ Invalid JSON or empty input!"
+
+    # Print the expected manifest path
+    manifest_path="${pomManifestPath:1}/pom.xml"
+    echo "📂 Expected MANIFEST path: $manifest_path"
+
+    # Test if MANIFEST exists in the JSON
+    echo "🔎 Checking if MANIFEST exists in JSON..."
+    jq -r --arg MANIFEST "$manifest_path" '.[] | select(.dependency.manifest_path == $MANIFEST)' <<< "$vul_page" || echo "⚠️ No matching manifest path found!"
+
+    # Run jq without mapfile first to see if it returns anything
+    echo "🛠 Running jq command separately for testing..."
+    jq -r --arg MANIFEST "$manifest_path" \
+    '.[] | select(.dependency.manifest_path == $MANIFEST and .state == "open") | .security_vulnerability.package.name + "|" + .security_vulnerability.severity + "|" + .security_advisory.ghsa_id + "|" + (.security_vulnerability.first_patched_version.identifier // "N/A") + "|"' <<< "$vul_page"
+
+    # Store results in array with debug output
+    echo "📌 Storing results in tempGithubAlerts array..."
+    mapfile -t tempGithubAlerts < <(jq -r --arg MANIFEST "$manifest_path" \
+    '.[] | select(.dependency.manifest_path == $MANIFEST and .state == "open") | .security_vulnerability.package.name + "|" + .security_vulnerability.severity + "|" + .security_advisory.ghsa_id + "|" + (.security_vulnerability.first_patched_version.identifier // "N/A") + "|"' <<< "$vul_page")
+
+    # Check if the array is empty
+    if [ ${#tempGithubAlerts[@]} -eq 0 ]; then
+        echo "⚠️ tempGithubAlerts is empty! Something went wrong."
+    else
+        echo "✅ tempGithubAlerts contains ${#tempGithubAlerts[@]} entries."
+        printf '%s\n' "${tempGithubAlerts[@]}"  # Print each entry for debugging
+    fi
+    
     mapfile -t tempGithubAlerts < <(jq -r --arg MANIFEST "${pomManifestPath:1}/pom.xml" '.[] | select(.dependency.manifest_path == $MANIFEST and .state == "open") | .security_vulnerability.package.name + "|" + .security_vulnerability.severity + "|" + .security_advisory.ghsa_id + "|" + .security_vulnerability.first_patched_version.identifier + "|"' <<< "${vul_page}")
     echo "Debug antq bug #5"
     echo "${tempGithubAlerts[@]}"
