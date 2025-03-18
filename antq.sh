@@ -332,6 +332,7 @@ do
 
     # Print the expected manifest path
     manifest_path="${pomManifestPath:1}/pom.xml"
+    manifest_path="${manifest_path#github/workspace/}"
     echo "📂 Expected MANIFEST path: $manifest_path"
 
     echo "🔎 Checking if MANIFEST exists in JSON..."
