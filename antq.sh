@@ -30,10 +30,6 @@ version_gt() {
 high_critical_check_security_fix () {
     newDependencies=()
     tempGhAlerts=("$@")
-    echo "Debug antq bug #1"
-    echo "${tempGhAlerts[@]:2}"
-    echo "Debug antq bug #2"
-    echo "$2"
     cd "$2" || exit
     for alertGh in "${tempGhAlerts[@]:2}"
     do
@@ -324,78 +320,10 @@ do
     if [[ "$INPUT_VERBOSE" == true ]]; then
         echo "Checking GitHub Security alerts for $i"
     fi
-
-    echo "🔍 Debugging GitHub Action Script..."
-    # Print the raw JSON content (limit to avoid excessive logs)
-    echo "📜 Printing a snippet of vul_page JSON..."
-    echo "$vul_page" | jq '.' | head -n 50 || echo "⚠️ Invalid JSON or empty input!"
-
-    # Print the expected manifest path
-    manifest_path="${pomManifestPath:1}/pom.xml"
-    manifest_path="${manifest_path#github/workspace/}"
-    echo "📂 Expected MANIFEST path: $manifest_path"
-
-    echo "🔎 Checking if MANIFEST exists in JSON..."
-
-    # Print the expected manifest path and JSON keys at the top level for context
-    echo "📂 Expected MANIFEST path: $manifest_path"
-    echo "📜 JSON top-level keys (for structure verification):"
-    jq 'keys' <<< "$vul_page" || echo "⚠️ JSON might not be an array!"
-
-    # Print all `dependency.manifest_path` values to see what exists in the JSON
-    echo "📜 Available manifest paths in JSON:"
-    jq -r '.[].dependency.manifest_path' <<< "$vul_page" | sort | uniq
-
-    # Test if MANIFEST exists in JSON
-    jq -r --arg MANIFEST "$manifest_path" '.[] | select(.dependency.manifest_path == $MANIFEST)' <<< "$vul_page" | tee /tmp/debug_manifest.json
-    if [[ ! -s /tmp/debug_manifest.json ]]; then
-        echo "⚠️ No matching manifest path found in JSON!"
-    else
-        echo "✅ Found matching manifest path!"
-        cat /tmp/debug_manifest.json | jq '.' | head -n 20  # Print first 20 lines
-    fi
-
-    echo "🛠 Running jq command separately for testing..."
-    jq -r --arg MANIFEST "$manifest_path" \
-    '.[] | select(.dependency.manifest_path == $MANIFEST and .state == "open") | 
-    .security_vulnerability.package.name + "|" + 
-    .security_vulnerability.severity + "|" + 
-    .security_advisory.ghsa_id + "|" + 
-    (.security_vulnerability.first_patched_version.identifier // "N/A") + "|"' <<< "$vul_page" | tee /tmp/debug_jq_output.txt
-
-    if [[ ! -s /tmp/debug_jq_output.txt ]]; then
-        echo "⚠️ JQ command returned no results! Check JSON structure."
-    else
-        echo "✅ JQ command output:"
-        cat /tmp/debug_jq_output.txt | head -n 10  # Show first 10 lines
-    fi
-
-    echo "📌 Storing results in tempGithubAlerts array..."
-    mapfile -t tempGithubAlerts < <(jq -r --arg MANIFEST "$manifest_path" \
-    '.[] | select(.dependency.manifest_path == $MANIFEST and .state == "open") | 
-    .security_vulnerability.package.name + "|" + 
-    .security_vulnerability.severity + "|" + 
-    .security_advisory.ghsa_id + "|" + 
-    (.security_vulnerability.first_patched_version.identifier // "N/A") + "|"' <<< "$vul_page")
-
-    # Check if the array is empty
-    if [ ${#tempGithubAlerts[@]} -eq 0 ]; then
-        echo "⚠️ tempGithubAlerts is empty! Dumping more debug info..."
-        echo "📜 JSON sample (first 50 lines):"
-        echo "$vul_page" | jq '.' | head -n 50
-    else
-        echo "✅ tempGithubAlerts contains ${#tempGithubAlerts[@]} entries."
-        printf '%s\n' "${tempGithubAlerts[@]}"  # Print each entry for debugging
-    fi
-
-    
-    mapfile -t tempGithubAlerts < <(jq -r --arg MANIFEST "${pomManifestPath:1}/pom.xml" '.[] | select(.dependency.manifest_path == $MANIFEST and .state == "open") | .security_vulnerability.package.name + "|" + .security_vulnerability.severity + "|" + .security_advisory.ghsa_id + "|" + .security_vulnerability.first_patched_version.identifier + "|"' <<< "${vul_page}")
-    echo "Debug antq bug #5"
-    echo "${tempGithubAlerts[@]}"
+    tempPomManifestPath="${pomManifestPath:1}/pom.xml"
+    mapfile -t tempGithubAlerts < <(jq -r --arg MANIFEST "${tempPomManifestPath#github/workspace/}/pom.xml" '.[] | select(.dependency.manifest_path == $MANIFEST and .state == "open") | .security_vulnerability.package.name + "|" + .security_vulnerability.severity + "|" + .security_advisory.ghsa_id + "|" + .security_vulnerability.first_patched_version.identifier + "|"' <<< "${vul_page}")
     for vulPackage in "${tempGithubAlerts[@]}"
     do
-        echo "Debug antq bug #6"
-        echo "$vulPackage"
         IFS='|' read -r -a array_vulnPackage <<< "$vulPackage"
         if [[ $INPUT_SEVERITY == "low" ]]; then
             severityLevel="low|medium|high|critical"
@@ -409,7 +337,10 @@ do
             severityLevel="medium|high|critical"
         fi
         if [[ "$severityLevel" == *"${array_vulnPackage[1]}"* ]]; then
+            echo "DEBUG HERE"
+            echo "$pomManifestPath"
             cd "$pomManifestPath" || exit
+            echo "U ARE HERE"
             dep_level=$(mvn -ntp dependency:tree -DoutputType=dot -Dincludes="${array_vulnPackage[0]}" | grep -e "->" | cut -d ">" -f 2 | cut -d '"' -f 2 | cut -d ":" -f 1-2)
             IFS=' ' read -r -a dependency_level <<< "$dep_level"
             vulPackage+="${dependency_level[0]}|"
@@ -445,12 +376,6 @@ do
             if [[ "$INPUT_VERBOSE" == true ]]; then
                 echo "Running high_critical_check_security_fix()"
             fi
-            echo "Still debugging #1"
-            echo "$namePom" 
-            echo "Still debugging #2"
-            echo "$pomManifestPath"
-            echo "Still debugging #3"
-            echo "${githubAlerts[@]}"
             high_critical_check_security_fix "$namePom" "$pomManifestPath" "${githubAlerts[@]}"
             cd "$cljdir" || exit
             if [[ "$INPUT_VERBOSE" == true ]]; then
