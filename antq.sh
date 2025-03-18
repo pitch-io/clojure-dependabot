@@ -325,8 +325,12 @@ do
         echo "Checking GitHub Security alerts for $i"
     fi
     mapfile -t tempGithubAlerts < <(jq -r --arg MANIFEST "${pomManifestPath:1}/pom.xml" '.[] | select(.dependency.manifest_path == $MANIFEST and .state == "open") | .security_vulnerability.package.name + "|" + .security_vulnerability.severity + "|" + .security_advisory.ghsa_id + "|" + .security_vulnerability.first_patched_version.identifier + "|"' <<< "${vul_page}")
+    echo "Debug antq bug #5"
+    echo "${tempGithubAlerts[@]}"
     for vulPackage in "${tempGithubAlerts[@]}"
     do
+        echo "Debug antq bug #6"
+        echo "$vulPackage"
         IFS='|' read -r -a array_vulnPackage <<< "$vulPackage"
         if [[ $INPUT_SEVERITY == "low" ]]; then
             severityLevel="low|medium|high|critical"
