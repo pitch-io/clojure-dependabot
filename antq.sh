@@ -30,8 +30,9 @@ version_gt() {
 high_critical_check_security_fix () {
     newDependencies=()
     tempGhAlerts=("$@")
-    echo "Debug antq bug"
+    echo "Debug antq bug #1"
     echo "${tempGhAlerts[@]:2}"
+    echo "Debug antq bug #2"
     echo "$2"
     cd "$2" || exit
     for alertGh in "${tempGhAlerts[@]:2}"
@@ -375,6 +376,12 @@ do
             if [[ "$INPUT_VERBOSE" == true ]]; then
                 echo "Running high_critical_check_security_fix()"
             fi
+            echo "Still debugging #1"
+            echo "$namePom" 
+            echo "Still debugging #2"
+            echo "$pomManifestPath"
+            echo "Still debugging #3"
+            echo "${githubAlerts[@]}"
             high_critical_check_security_fix "$namePom" "$pomManifestPath" "${githubAlerts[@]}"
             cd "$cljdir" || exit
             if [[ "$INPUT_VERBOSE" == true ]]; then
