@@ -18,7 +18,9 @@ dependency_tree_summary () {
 }
 
 vulnerabilities_summary () {
-    mapfile -t info_pack < <(jq -r --arg MANIFEST "$1" '.[] | select(.dependency.manifest_path == $MANIFEST and .state == "open") | (.number|tostring) + "|" + .security_vulnerability.package.name + "|" + .security_vulnerability.severity + "|" + .security_advisory.ghsa_id + "|" + .security_advisory.cve_id + "|" + .security_vulnerability.first_patched_version.identifier + "|"' <<< "$2")
+    tempManifestPath="$1"
+    tempManifestPath="${tempManifestPath#github/workspace/}"
+    mapfile -t info_pack < <(jq -r --arg MANIFEST "$tempManifestPath" '.[] | select(.dependency.manifest_path == $MANIFEST and .state == "open") | (.number|tostring) + "|" + .security_vulnerability.package.name + "|" + .security_vulnerability.severity + "|" + .security_advisory.ghsa_id + "|" + .security_advisory.cve_id + "|" + .security_vulnerability.first_patched_version.identifier + "|"' <<< "$2")
     for i in "${info_pack[@]}"
     do
         IFS='|' read -r -a array_i <<< "$i" 
@@ -108,7 +110,7 @@ do
             echo "| Number | Package | Severity | GHSA | CVE | Patched in | Dependency level |"
             echo "| --- | --- | --- | --- | --- | --- | --- |"
         } >> "$GITHUB_STEP_SUMMARY"
-        vulnerabilities_summary "${db_path#github/workspace/}" "$vul_page"
+        vulnerabilities_summary "$db_path" "$vul_page"
         echo "" >> "$GITHUB_STEP_SUMMARY"
     else
         cd "${cljdir}/depsedn" || exit
@@ -119,7 +121,7 @@ do
             echo "| Number | Package | Severity | GHSA | CVE | Patched in | Dependency level |"
             echo "| --- | --- | --- | --- | --- | --- | --- |"
         } >> "$GITHUB_STEP_SUMMARY"
-        vulnerabilities_summary "${db_path#github/workspace/}" "$vul_page"
+        vulnerabilities_summary "$db_path" "$vul_page"
         echo "" >> "$GITHUB_STEP_SUMMARY"
     fi
 done
