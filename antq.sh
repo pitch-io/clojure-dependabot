@@ -320,7 +320,8 @@ do
     if [[ "$INPUT_VERBOSE" == true ]]; then
         echo "Checking GitHub Security alerts for $i"
     fi
-    mapfile -t tempGithubAlerts < <(jq -r --arg MANIFEST "${pomManifestPath:1}/pom.xml" '.[] | select(.dependency.manifest_path == $MANIFEST and .state == "open") | .security_vulnerability.package.name + "|" + .security_vulnerability.severity + "|" + .security_advisory.ghsa_id + "|" + .security_vulnerability.first_patched_version.identifier + "|"' <<< "${vul_page}")
+    tempPomManifestPath="${pomManifestPath:1}/pom.xml"
+    mapfile -t tempGithubAlerts < <(jq -r --arg MANIFEST "${tempPomManifestPath#github/workspace/}" '.[] | select(.dependency.manifest_path == $MANIFEST and .state == "open") | .security_vulnerability.package.name + "|" + .security_vulnerability.severity + "|" + .security_advisory.ghsa_id + "|" + .security_vulnerability.first_patched_version.identifier + "|"' <<< "${vul_page}")
     for vulPackage in "${tempGithubAlerts[@]}"
     do
         IFS='|' read -r -a array_vulnPackage <<< "$vulPackage"
