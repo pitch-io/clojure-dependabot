@@ -322,8 +322,8 @@ do
     fi
     tempPomManifestPath="${pomManifestPath:1}/pom.xml"
     echo "DEBUG HERE"
-    echo "${tempPomManifestPath#github/workspace/}/pom.xml"
-    mapfile -t tempGithubAlerts < <(jq -r --arg MANIFEST "${tempPomManifestPath#github/workspace/}/pom.xml" '.[] | select(.dependency.manifest_path == $MANIFEST and .state == "open") | .security_vulnerability.package.name + "|" + .security_vulnerability.severity + "|" + .security_advisory.ghsa_id + "|" + .security_vulnerability.first_patched_version.identifier + "|"' <<< "${vul_page}")
+    echo "${tempPomManifestPath#github/workspace/}"
+    mapfile -t tempGithubAlerts < <(jq -r --arg MANIFEST "${tempPomManifestPath#github/workspace/}" '.[] | select(.dependency.manifest_path == $MANIFEST and .state == "open") | .security_vulnerability.package.name + "|" + .security_vulnerability.severity + "|" + .security_advisory.ghsa_id + "|" + .security_vulnerability.first_patched_version.identifier + "|"' <<< "${vul_page}")
     echo "$tempGithubAlerts"
     for vulPackage in "${tempGithubAlerts[@]}"
     do
