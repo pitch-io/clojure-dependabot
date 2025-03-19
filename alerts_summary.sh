@@ -108,7 +108,7 @@ do
             echo "| Number | Package | Severity | GHSA | CVE | Patched in | Dependency level |"
             echo "| --- | --- | --- | --- | --- | --- | --- |"
         } >> "$GITHUB_STEP_SUMMARY"
-        vulnerabilities_summary "$db_path" "$vul_page"
+        vulnerabilities_summary "${db_path#github/workspace/}" "$vul_page"
         echo "" >> "$GITHUB_STEP_SUMMARY"
     else
         cd "${cljdir}/depsedn" || exit
@@ -119,7 +119,7 @@ do
             echo "| Number | Package | Severity | GHSA | CVE | Patched in | Dependency level |"
             echo "| --- | --- | --- | --- | --- | --- | --- |"
         } >> "$GITHUB_STEP_SUMMARY"
-        vulnerabilities_summary "$db_path" "$vul_page"
+        vulnerabilities_summary "${db_path#github/workspace/}" "$vul_page"
         echo "" >> "$GITHUB_STEP_SUMMARY"
     fi
 done
