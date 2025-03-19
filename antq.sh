@@ -321,10 +321,7 @@ do
         echo "Checking GitHub Security alerts for $i"
     fi
     tempPomManifestPath="${pomManifestPath:1}/pom.xml"
-    echo "DEBUG HERE"
-    echo "${tempPomManifestPath#github/workspace/}"
     mapfile -t tempGithubAlerts < <(jq -r --arg MANIFEST "${tempPomManifestPath#github/workspace/}" '.[] | select(.dependency.manifest_path == $MANIFEST and .state == "open") | .security_vulnerability.package.name + "|" + .security_vulnerability.severity + "|" + .security_advisory.ghsa_id + "|" + .security_vulnerability.first_patched_version.identifier + "|"' <<< "${vul_page}")
-    echo "$tempGithubAlerts"
     for vulPackage in "${tempGithubAlerts[@]}"
     do
         IFS='|' read -r -a array_vulnPackage <<< "$vulPackage"
@@ -340,10 +337,7 @@ do
             severityLevel="medium|high|critical"
         fi
         if [[ "$severityLevel" == *"${array_vulnPackage[1]}"* ]]; then
-            echo "DEBUG HERE"
-            echo "$pomManifestPath"
             cd "$pomManifestPath" || exit
-            echo "U ARE HERE"
             dep_level=$(mvn -ntp dependency:tree -DoutputType=dot -Dincludes="${array_vulnPackage[0]}" | grep -e "->" | cut -d ">" -f 2 | cut -d '"' -f 2 | cut -d ":" -f 1-2)
             IFS=' ' read -r -a dependency_level <<< "$dep_level"
             vulPackage+="${dependency_level[0]}|"
