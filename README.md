@@ -27,7 +27,7 @@ on:
   workflow_dispatch:
 
 env:
-  GITHUB_PAT: ${{ secret.PAT }}
+  GITHUB_PAT: ${{ secrets.PAT }}
   GITHUB_TOKEN: ${{ github.token }}
   GITHUB_REPOSITORY: ${{ github.repository }}
   GITHUB_REF: ${{ github.ref }}
