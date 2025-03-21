@@ -20,11 +20,18 @@ dependency_tree_summary () {
 vulnerabilities_summary () {
     tempManifestPath="$1"
     tempManifestPath="${tempManifestPath#github/workspace/}"
+    if [[ "$INPUT_VERBOSE" == true ]]; then
+        echo "tempManifestPath: $tempManifestPath"
+    fi
     mapfile -t info_pack < <(jq -r --arg MANIFEST "$tempManifestPath" '.[] | select(.dependency.manifest_path == $MANIFEST and .state == "open") | (.number|tostring) + "|" + .security_vulnerability.package.name + "|" + .security_vulnerability.severity + "|" + .security_advisory.ghsa_id + "|" + .security_advisory.cve_id + "|" + .security_vulnerability.first_patched_version.identifier + "|"' <<< "$2")
     for i in "${info_pack[@]}"
     do
-        IFS='|' read -r -a array_i <<< "$i" 
-        cd "/${1/'pom.xml'/''}" || exit
+        IFS='|' read -r -a array_i <<< "$i"
+        tempPath="/${1/'pom.xml'/''}"
+        cd "$tempPath" || exit
+        if [[ "$INPUT_VERBOSE" == true ]]; then
+            echo "Moved to: $tempPath"
+        fi
         dep_level=$(mvn -ntp dependency:tree -DoutputType=dot -Dincludes="${array_i[1]}" | grep -e "->" | cut -d ">" -f 2 | cut -d '"' -f 2 | cut -d ":" -f 1-2)
         IFS=' ' read -r -a dependency_level <<< "$dep_level"
         array_i+=("${dependency_level[0]}")
@@ -66,6 +73,10 @@ vulnerabilities_summary () {
             fi
         done
         echo "$table_row" >> "$GITHUB_STEP_SUMMARY"
+        if [[ "$INPUT_VERBOSE" == true ]]; then
+            echo "CVE Table"
+            echo "$table_row"
+        fi
     done
 }
 
