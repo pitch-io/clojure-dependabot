@@ -412,12 +412,42 @@ do
                 counterDuplicate+="| $name | $version | $latestVersion | [🔗 Changelog]($changesUrl) | $securityUpdate |"
             fi
             if [[ $INPUT_AUTO_PULL_REQUEST == true ]] && [[ ! "$INPUT_IGNORE_DEPENDENCY" == *"$name"* ]]; then
-                if [[ "$INPUT_VERBOSE" == true ]]; then
-                    echo "Running vulnerability_fix_pr()"
-                fi
-                vulnerability_fix_pr "${newDependencies[@]}"
-                if [[ $INPUT_SECURITY_UPDATES_ONLY == true ]]; then
-                    if [ -n "$securityUpdate" ]; then
+                if [[ "$INPUT_ALLOW_DEPENDENCY" == *"$name"* ]] || [[ -z "$INPUT_ALLOW_DEPENDENCY" ]]; then
+                    if [[ "$INPUT_VERBOSE" == true ]]; then
+                        echo "Running vulnerability_fix_pr()"
+                    fi
+                    vulnerability_fix_pr "${newDependencies[@]}"
+                    if [[ $INPUT_SECURITY_UPDATES_ONLY == true ]]; then
+                        if [ -n "$securityUpdate" ]; then
+                            git fetch
+                            mapfile -t branches < <(git branch -r | grep "$prefix")
+                            if [[ ${branches[*]} ]]; then
+                                prTime=()
+                                for k in "${branches[@]}"
+                                do
+                                    prTime+=("${k//origin\/$prefix/}")
+                                done
+                                IFS=" " read -r -a lastBranch <<< "$(echo "${prTime[*]}" | xargs -n1 | sort -nr | xargs)"
+                                if [[ "$INPUT_VERBOSE" == true ]]; then
+                                    echo "Checking if the security update PR already exists"
+                                fi
+                                statusPr=$(gh pr list --head "$prefix${lastBranch[0]}" --state open --json title | jq ". | length")
+                                if [[ $statusPr -lt 1 ]]; then
+                                    if [[ "$INPUT_VERBOSE" == true ]]; then
+                                        echo "Create the security PR dependabot/clojure${cljdir/$GITHUB_WORKSPACE}/$escapedName-$latestVersion-$1-$time"
+                                    fi
+                                    update_package "$cljdir" "$name" "$1" "$escapedName" "$latestVersion" "$time" "$version" "$changesUrl" "$securityUpdatesPrBody"
+                                else
+                                    git checkout "$INPUT_MAIN_BRANCH"
+                                fi
+                            else
+                                if [[ "$INPUT_VERBOSE" == true ]]; then
+                                    echo "Create the security PR dependabot/clojure${cljdir/$GITHUB_WORKSPACE}/$escapedName-$latestVersion-$1-$time"
+                                fi
+                                update_package "$cljdir" "$name" "$1" "$escapedName" "$latestVersion" "$time" "$version" "$changesUrl" "$securityUpdatesPrBody"
+                            fi    
+                        fi
+                    else
                         git fetch
                         mapfile -t branches < <(git branch -r | grep "$prefix")
                         if [[ ${branches[*]} ]]; then
@@ -444,35 +474,7 @@ do
                                 echo "Create the security PR dependabot/clojure${cljdir/$GITHUB_WORKSPACE}/$escapedName-$latestVersion-$1-$time"
                             fi
                             update_package "$cljdir" "$name" "$1" "$escapedName" "$latestVersion" "$time" "$version" "$changesUrl" "$securityUpdatesPrBody"
-                        fi    
-                    fi
-                else
-                    git fetch
-                    mapfile -t branches < <(git branch -r | grep "$prefix")
-                    if [[ ${branches[*]} ]]; then
-                        prTime=()
-                        for k in "${branches[@]}"
-                        do
-                            prTime+=("${k//origin\/$prefix/}")
-                        done
-                        IFS=" " read -r -a lastBranch <<< "$(echo "${prTime[*]}" | xargs -n1 | sort -nr | xargs)"
-                        if [[ "$INPUT_VERBOSE" == true ]]; then
-                            echo "Checking if the security update PR already exists"
                         fi
-                        statusPr=$(gh pr list --head "$prefix${lastBranch[0]}" --state open --json title | jq ". | length")
-                        if [[ $statusPr -lt 1 ]]; then
-                            if [[ "$INPUT_VERBOSE" == true ]]; then
-                                echo "Create the security PR dependabot/clojure${cljdir/$GITHUB_WORKSPACE}/$escapedName-$latestVersion-$1-$time"
-                            fi
-                            update_package "$cljdir" "$name" "$1" "$escapedName" "$latestVersion" "$time" "$version" "$changesUrl" "$securityUpdatesPrBody"
-                        else
-                            git checkout "$INPUT_MAIN_BRANCH"
-                        fi
-                    else
-                        if [[ "$INPUT_VERBOSE" == true ]]; then
-                            echo "Create the security PR dependabot/clojure${cljdir/$GITHUB_WORKSPACE}/$escapedName-$latestVersion-$1-$time"
-                        fi
-                        update_package "$cljdir" "$name" "$1" "$escapedName" "$latestVersion" "$time" "$version" "$changesUrl" "$securityUpdatesPrBody"
                     fi
                 fi
             fi
