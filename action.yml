@@ -45,6 +45,10 @@ inputs:
     description: 'Ignore specific dependencies. Separate items by comma.'
     required: false
     default: ''
+  allow_dependency:
+    description: 'Allow specific dependencies. Separate items by comma.'
+    required: false
+    default: ''
   local_dependency:
     description: 'Install maven jars to the local repository cache. Separate items by comma.'
     required: false
