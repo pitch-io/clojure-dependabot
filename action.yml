@@ -54,11 +54,11 @@ inputs:
     required: false
     default: ''
   summary:
-    descrition: 'Print a human-friendly workflow summary.'
+    description: 'Print a human-friendly workflow summary.'
     required: false
     default: true
   verbose:
-    descrition: 'Verbose output.'
+    description: 'Verbose output.'
     required: false
     default: false
 runs:
