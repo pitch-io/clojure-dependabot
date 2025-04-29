@@ -64,6 +64,7 @@ jobs:
 | `ignore_dependency` | Add dependencies (`[groupId]/[artifactId]`) that must not be updated. Dependencies need to be separated by a comma (`,`). |
 | `allow_dependency` | Add dependencies (`[groupId]/[artifactId]`) that must be updated. Dependencies need to be separated by a comma (`,`). If a dependency is matched by an `allow_dependency` and an `ignore_dependency` statement, **then it is ignored.** |
 | `local_dependency` | Install dependencies (`[pathToFile]:[groupdId]:[artifactId]:[version]:[packaging]`) into local repository cache. Dependencies need to be separated by a comma (`,`). |
+| `summary` | Boolean. Print a markdown summary when the GitHub Workflow ends. |
 | `verbose` | Boolean. Enable verbose mode. |
 
 
