@@ -30,14 +30,11 @@ version_lt() {
     test "$(echo "$@" | tr " " "\n" | sort -V | head -n 1)" == "$1"; 
 }
 
-# Define the function to close outdated PRs when a new update is available
 close_outdated_pr() {
     existingPrs=$(gh pr list --state open --json title,number | jq -c '.[]')
     if [[ "$INPUT_VERBOSE" == true ]]; then
         echo "Existing PRs: ${existingPrs}"
     fi
-    
-    # Use process substitution to pass the JSON objects directly to the while loop
     while IFS= read -r pr; do
         prTitle=$(echo "$pr" | jq -r '.title')
         prNumber=$(echo "$pr" | jq -r '.number')
