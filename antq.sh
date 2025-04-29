@@ -1,6 +1,6 @@
 #!/bin/bash
 
-update_package () {
+update_package() {
     if [[ $3 == "project.clj" ]]; then
         clojure -Sdeps '{:deps {com.github.liquidz/antq {:mvn/version "RELEASE"}}}' -M -m antq.core --upgrade --force --directory "$1" --focus="$2" --skip=clojure-cli
     else
@@ -25,6 +25,33 @@ version_ge() {
 }
 version_gt() { 
     test "$(echo "$@" | tr " " "\n" | sort -V | head -n 1)" != "$1"; 
+}
+version_lt() { 
+    test "$(echo "$@" | tr " " "\n" | sort -V | head -n 1)" == "$1"; 
+}
+
+close_outdated_pr() {
+    existingPrs=$(gh pr list --state open --limit 1000 --json title,number | jq -c '.[]')
+    if [[ "$INPUT_VERBOSE" == true ]]; then
+        echo "Existing PRs: ${existingPrs}"
+    fi
+    while IFS= read -r pr; do
+        prTitle=$(echo "$pr" | jq -r '.title')
+        prNumber=$(echo "$pr" | jq -r '.number')
+        if [[ "$INPUT_VERBOSE" == true ]]; then
+            echo "Title: ${prTitle}"
+            echo "Number: ${prNumber}"
+        fi
+        if [[ "$prTitle" == *"Bump $1 from"* ]] && [[ "$prTitle" == *"$2"* ]]; then
+            outdatedVersion=$(echo "$prTitle" | awk '{print $6}')
+            if [[ "$outdatedVersion" != "" ]] && version_lt "$outdatedVersion" "$3"; then
+                if [[ "$INPUT_VERBOSE" == true ]]; then
+                    echo "Closing outdated PR #$prNumber: $prTitle"
+                fi
+                gh pr close "$prNumber" --comment "Closing this PR as a newer update to version $3 is available."
+            fi
+        fi
+    done < <(echo "$existingPrs")
 }
 
 high_critical_check_security_fix () {
@@ -273,7 +300,7 @@ if [[ "$INPUT_VERBOSE" == true ]]; then
         echo "Finding all $1 files"
 fi
 mapfile -t array < <(find . -name "$1")
-if [[ $1 == "project.clj" ]]; then
+if [[ $1 == "project.clj" ]] && [[ "$INPUT_SUMMARY" == true ]]; then
     echo "## Outdated Dependencies" >> "$GITHUB_STEP_SUMMARY"
 fi
 if [[ $INPUT_INCLUDE_SUBDIRECTORIES != true ]]; then
@@ -298,6 +325,8 @@ do
     if [[ "$INPUT_VERBOSE" == true ]]; then
         echo "Creating antq-report.json"
     fi
+    # -P helps to avoid concurrency errors
+    clojure -Sdeps '{:deps {com.github.liquidz/antq {:mvn/version "RELEASE"}}}' -P
     clojure -Sdeps '{:deps {com.github.liquidz/antq {:mvn/version "RELEASE"}}}' -M -m antq.core --reporter="json" > /tmp/antq-report.json || true
     length=$(jq '. | length' /tmp/antq-report.json)
     length=$((length-1))
@@ -384,7 +413,7 @@ do
                 securityUpdate="⬆️"
             fi
             prefix="dependabot/clojure${cljdir/$GITHUB_WORKSPACE}/$escapedName-$latestVersion-$1-"
-            if [[ "$summaryOutput" -eq 0 ]]; then
+            if [[ "$summaryOutput" -eq 0 ]] && [[ "$INPUT_SUMMARY" == true ]]; then
                 {
                     echo "### $INPUT_DIRECTORY$i"
                     echo "<details>"
@@ -397,7 +426,7 @@ do
             if [[ "$INPUT_VERBOSE" == true ]]; then
                 echo "Adding info to GitHub Summary"
             fi            
-            if [[ $counterDuplicate != *"| $name | $version | $latestVersion | [🔗 Changelog]($changesUrl) | $securityUpdate |"* ]]; then
+            if [[ $counterDuplicate != *"| $name | $version | $latestVersion | [🔗 Changelog]($changesUrl) | $securityUpdate |"* ]] && [[ "$INPUT_SUMMARY" == true ]]; then
                 if [[ $changesUrl == "null" ]]; then
                     echo "| $name | $version | $latestVersion |  | $securityUpdate |" >> "$GITHUB_STEP_SUMMARY"
                     if [[ "$INPUT_VERBOSE" == true ]]; then
@@ -436,6 +465,7 @@ do
                                     if [[ "$INPUT_VERBOSE" == true ]]; then
                                         echo "Create the security PR dependabot/clojure${cljdir/$GITHUB_WORKSPACE}/$escapedName-$latestVersion-$1-$time"
                                     fi
+                                    close_outdated_pr "$name" "$version" "$latestVersion"
                                     update_package "$cljdir" "$name" "$1" "$escapedName" "$latestVersion" "$time" "$version" "$changesUrl" "$securityUpdatesPrBody"
                                 else
                                     git checkout "$INPUT_MAIN_BRANCH"
@@ -444,6 +474,7 @@ do
                                 if [[ "$INPUT_VERBOSE" == true ]]; then
                                     echo "Create the security PR dependabot/clojure${cljdir/$GITHUB_WORKSPACE}/$escapedName-$latestVersion-$1-$time"
                                 fi
+                                close_outdated_pr "$name" "$version" "$latestVersion"
                                 update_package "$cljdir" "$name" "$1" "$escapedName" "$latestVersion" "$time" "$version" "$changesUrl" "$securityUpdatesPrBody"
                             fi    
                         fi
@@ -465,6 +496,7 @@ do
                                 if [[ "$INPUT_VERBOSE" == true ]]; then
                                     echo "Create the security PR dependabot/clojure${cljdir/$GITHUB_WORKSPACE}/$escapedName-$latestVersion-$1-$time"
                                 fi
+                                close_outdated_pr "$name" "$version" "$latestVersion"
                                 update_package "$cljdir" "$name" "$1" "$escapedName" "$latestVersion" "$time" "$version" "$changesUrl" "$securityUpdatesPrBody"
                             else
                                 git checkout "$INPUT_MAIN_BRANCH"
@@ -473,6 +505,7 @@ do
                             if [[ "$INPUT_VERBOSE" == true ]]; then
                                 echo "Create the security PR dependabot/clojure${cljdir/$GITHUB_WORKSPACE}/$escapedName-$latestVersion-$1-$time"
                             fi
+                            close_outdated_pr "$name" "$version" "$latestVersion"
                             update_package "$cljdir" "$name" "$1" "$escapedName" "$latestVersion" "$time" "$version" "$changesUrl" "$securityUpdatesPrBody"
                         fi
                     fi
@@ -480,7 +513,7 @@ do
             fi
         fi
     done
-    if [[ "$summaryOutput" -eq 1 ]]; then
+    if [[ "$summaryOutput" -eq 1 ]] && [[ "$INPUT_SUMMARY" == true ]]; then
         echo "</details>" >> "$GITHUB_STEP_SUMMARY"
         echo "" >> "$GITHUB_STEP_SUMMARY"
     fi
