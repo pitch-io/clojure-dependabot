@@ -31,7 +31,7 @@ version_lt() {
 }
 
 close_outdated_pr() {
-    existingPrs=$(gh pr list --state open --json title,number | jq -c '.[]')
+    existingPrs=$(gh pr list --state open --limit 1000 --json title,number | jq -c '.[]')
     if [[ "$INPUT_VERBOSE" == true ]]; then
         echo "Existing PRs: ${existingPrs}"
     fi
