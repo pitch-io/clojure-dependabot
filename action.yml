@@ -10,15 +10,15 @@ inputs:
     required: false
     default: true
   security_updates_only:
-    descrition: 'Update only vulnerable packages.'
+    description: 'Update only vulnerable packages.'
     required: false
     default: true
   update_omitted:
-    descrition: '[Unstable] Update omitted packages.'
+    description: '[Unstable] Update omitted packages.'
     required: false
     default: false
   severity:
-    descrition: 'Minimum severity to update. Values: low, medium, high, critical.'
+    description: 'Minimum severity to update. Values: low, medium, high, critical.'
     required: false
     default: 'low'
   main_branch:
