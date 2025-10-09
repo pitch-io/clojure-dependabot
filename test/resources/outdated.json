@@ -1,0 +1,47 @@
+[
+  {
+    "parent": null,
+    "name": "foo/bar",
+    "file": "deps.edn",
+    "extra": {
+      "url": "https://example.com/"
+    },
+    "type": "git-sha",
+    "repositories": null,
+    "changes-url": "https://example.com/changes",
+    "exclude-versions": null,
+    "project": "clojure",
+    "latest-version": "acb123",
+    "latest-name": null,
+    "version": "def456",
+    "diff-url": "https://example.com/diff"
+  },
+  {
+    "parent": null,
+    "name": "baz/quux",
+    "file": "deps.edn",
+    "type": "git-sha",
+    "repositories": null,
+    "changes-url": "https://example.com/changes",
+    "exclude-versions": null,
+    "project": "clojure",
+    "latest-version": "1.2.4",
+    "latest-name": null,
+    "version": "1.2.3",
+    "diff-url": "https://example.com/diff"
+  },
+  {
+    "parent": null,
+    "name": "some.internal/library",
+    "file": "deps.edn",
+    "type": "java",
+    "repositories": null,
+    "changes-url": null,
+    "exclude-versions": null,
+    "project": "clojure",
+    "latest-version": "1.4.5",
+    "latest-name": null,
+    "version": "1.4.3",
+    "diff-url": null
+  }
+]

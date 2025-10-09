@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+
+exec bb -f /usr/lib/clojure-dependabot/clojure_dependabot.clj

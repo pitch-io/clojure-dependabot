@@ -1,66 +1,63 @@
+---
 name: 'Dependabot for Clojure projects'
 author: 'Luigi Gubello'
 description: 'Run Dependabot as GitHub Action workflow in your Clojure projects.'
+
 branding:
   icon: 'shield'
   color: 'gray-dark'
+
+# please keep these alphabetized
 inputs:
   auto_pull_request:
     description: 'Create auto pull-requests when updates for primary dependencies are available.'
     required: false
     default: true
-  security_updates_only:
-    description: 'Update only vulnerable packages.'
+  directory:
+    description: 'Directory relative to the workspace root that will be scanned.'
+    required: false
+    default: ''
+  ignore_dependencies:
+    description: |
+      Dependencies to ignore when reporting outdated dependencies or when making pull requests.
+      Comma separated list where each item itself is of the following form:
+      <group_id>:<artifact_id>:<version>
+      The :<version> may be omitted in which case any matching version will be ignored.
+    required: false
+    default: ''
+  include_subdirectories:
+    description: 'Scan for clojure projects in subdirectories'
     required: false
     default: true
-  update_omitted:
-    description: '[Unstable] Update omitted packages.'
-    required: false
-    default: false
-  severity:
-    description: 'Minimum severity to update. Values: low, medium, high, critical.'
-    required: false
-    default: 'low'
-  main_branch:
-    description: 'The branch into which you want your code merged.'
-    required: false
-    default: 'main'
+  # TODO add option `ignore_directories` for skipping subdirectories
   labels:
     description: 'Add labels to the pull-requests. Separate items by comma.'
     required: false
     default: ''
+  local_dependencies:
+    description: |
+      Maven JARs to install to the local repository cache.
+      Comma separated list where each item itself is of the form:
+      <relative_path>:<group_id>:<artifact_id>:<version>:<packaging>
+    required: false
+    default: ''
+  main_branch:
+    description: 'The branch into which you want your code merged.'
+    required: false
+    default: 'main'
   reviewers:
     description: 'Add reviewers to the pull-requests. Separate items by comma.'
     required: false
     default: ''
-  directory:
-    description: 'Directory which will be scanned.'
-    required: false
-    default: ''
-  include_subdirectories:
-    description: 'Iteratively look for project.clj and deps.edn in the subdirectories.'
+  security_updates_only:
+    description: 'Update only vulnerable packages, not outdated ones.'
     required: false
     default: true
-  ignore_dependency:
-    description: 'Ignore specific dependencies. Separate items by comma.'
+  severity:
+    description: 'Minimum severity to report/update. Values: low, medium, high, critical.'
     required: false
-    default: ''
-  allow_dependency:
-    description: 'Allow specific dependencies. Separate items by comma.'
-    required: false
-    default: ''
-  local_dependency:
-    description: 'Install maven jars to the local repository cache. Separate items by comma.'
-    required: false
-    default: ''
-  summary:
-    description: 'Print a human-friendly workflow summary.'
-    required: false
-    default: true
-  verbose:
-    description: 'Verbose output.'
-    required: false
-    default: false
+    default: 'low'
+
 runs:
   using: 'docker'
   image: 'Dockerfile'
