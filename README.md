@@ -49,6 +49,14 @@ jobs:
 
 See [`actions.yml`](./actions.yml) for more details on each option.
 
+## Development
+
+Test your changes by running:
+
+```sh
+bb test:bb
+```
+
 ## Security
 
 If you find a security vulnerability, please report it privately at [security@pitch.com](mailto:security@pitch.com).
