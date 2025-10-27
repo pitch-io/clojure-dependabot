@@ -11,7 +11,7 @@ RUN set -o pipefail && \
     curl --retry 5 --retry-max-time 120 -sSfL https://github.com/clojure/brew-install/releases/latest/download/linux-install.sh | bash
 
 RUN set -o pipefail && \
-    curl --retry 5 --retry-max-time 120 -sSfL https://raw.githubusercontent.com/babashka/babashka/master/install | bash
+    curl --retry 5 --retry-max-time 120 -sSfL https://raw.githubusercontent.com/babashka/babashka/v1.12.209/install | bash
 
 RUN set -o pipefail && \
     curl --retry 5 --retry-max-time 120 -sSfL -o /usr/bin/maven-dependency-submission-linux https://github.com/advanced-security/maven-dependency-submission-action/releases/download/v5.0.0/maven-dependency-submission-action-linux && \

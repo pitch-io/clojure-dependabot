@@ -51,6 +51,15 @@ See [`actions.yml`](./actions.yml) for more details on each option.
 
 ## Development
 
+This project is configured to use [`asdf`](https://asdf-vm.com/) to manage its environment.
+
+You can run the code in the production Docker container with `./scripts/docker.sh` or locally with `./scripts/local.sh`.
+You will need to set environment variables for these scripts to run.
+You can look at the source code, or run them and they will raise errors and tell you what variables to set.
+
+**NOTE:** Running the these scripts will communicate with the GitHub API and will manage tickets and PRs.
+If this is not desirable, you will need to set up a dummy repo to test against.
+
 Test your changes by running:
 
 ```sh
