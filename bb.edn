@@ -1,0 +1,11 @@
+{:paths ["."]
+ :deps {camel-snake-kebab/camel-snake-kebab {:mvn/version "0.4.3"}
+        com.github.liquidz/antq {:mvn/version "2.11.1276"}
+        hiccup/hiccup {:mvn/version "2.0.0"}}
+ :tasks {test:bb {:extra-paths ["test"]
+                  :extra-deps {io.github.cognitect-labs/test-runner
+                               {:git/tag "v0.5.1" :git/sha "dfb30dd"}}
+                  :task (exec 'cognitect.test-runner.api/test)
+                  :exec-args {:dirs ["test"]}
+                  :org.babashka/cli {:coerce {:nses [:symbol]
+                                              :vars [:symbol]}}}}}

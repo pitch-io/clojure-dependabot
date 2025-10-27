@@ -3,35 +3,43 @@ FROM clojure:lein-trixie-slim
 LABEL com.github.actions.name="Dependabot for Clojure projects" \
       com.github.actions.description="Run Dependabot as GitHub Action workflow in your Clojure project."
 
-# Install maven, antq, maven-dependency-submission cli 2.0.1, clojure, and gh cli
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    apt-get -qq update && \
+    apt-get -qq install -y --no-install-recommends curl git maven
+
 RUN set -o pipefail && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends \
-        maven libmaven-dependency-plugin-java curl jq git build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libsqlite3-dev libreadline-dev libffi-dev libbz2-dev && \
-    curl --retry 5 --retry-max-time 120 -sSfL -o linux-install.sh https://download.clojure.org/install/linux-install-1.11.1.1165.sh && \
-    chmod +x linux-install.sh && \
-    ./linux-install.sh && \
-    curl --retry 5 --retry-max-time 120 -sSfL -o maven-dependency-submission-linux-x64 https://github.com/advanced-security/maven-dependency-submission-action/releases/download/v4.1.1/maven-dependency-submission-action-linux && \
-    chmod +x maven-dependency-submission-linux-x64 && \
-    mv maven-dependency-submission-linux-x64 /usr/bin/maven-dependency-submission-linux-x64 && \
-    clojure -Ttools install-latest :lib com.github.liquidz/antq :as antq && \
+    curl --retry 5 --retry-max-time 120 -sSfL https://github.com/clojure/brew-install/releases/latest/download/linux-install.sh | bash
+
+RUN set -o pipefail && \
+    curl --retry 5 --retry-max-time 120 -sSfL https://raw.githubusercontent.com/babashka/babashka/v1.12.209/install | bash
+
+RUN set -o pipefail && \
+    curl --retry 5 --retry-max-time 120 -sSfL -o /usr/bin/maven-dependency-submission-linux https://github.com/advanced-security/maven-dependency-submission-action/releases/download/v5.0.0/maven-dependency-submission-action-linux && \
+    chmod 0755 /usr/bin/maven-dependency-submission-linux
+
+RUN set -o pipefail && \
+    export DEBIAN_FRONTEND=noninteractive && \
     curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg && \
-    chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg && \
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends gh && \
-    rm -rf /var/lib/apt/lists/*
+    chmod 0644 /usr/share/keyrings/githubcli-archive-keyring.gpg && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list && \
+    apt-get -qq update && \
+    apt-get -qq install -y --no-install-recommends gh
 
-COPY local_dependency.sh /local_dependency.sh
+RUN mkdir /usr/lib/clojure-dependabot/
 
-COPY scanner.sh /scanner.sh
+COPY bb.edn /usr/lib/clojure-dependabot/
 
-COPY dependabot_alerts.sh /dependabot_alerts.sh
+# Helper for dev testing. This is pointless in GitHub Actions as the runner sets a different $HOME,
+# so the things we download during the build get lost. There might be a better way to do this, like
+# at runtime doing some smart copying, the current state is "fine" for now.
+ARG PULL_DEPENDENCIES='0'
+RUN if [ "$PULL_DEPENDENCIES" = 1 ]; then \
+        cd /usr/lib/clojure-dependabot/ && \
+        bb -e '(println "tooling installed")'; \
+    fi
 
-COPY alerts_summary.sh /alerts_summary.sh
+COPY clojure_dependabot.clj action.yml /usr/lib/clojure-dependabot/
 
-COPY antq.sh /antq.sh
+COPY scripts/clojure-dependabot /usr/bin/
 
-COPY entrypoint.sh /entrypoint.sh
-
-ENTRYPOINT ["/entrypoint.sh"]
+CMD ["clojure-dependabot"]

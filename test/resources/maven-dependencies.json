@@ -1,0 +1,60 @@
+{
+  "groupId": "parent",
+  "artifactId": "parent",
+  "version": "0.1.0",
+  "type": "jar",
+  "scope": "",
+  "classifier": "",
+  "optional": "false",
+  "children": [
+    {
+      "groupId": "child-1",
+      "artifactId": "child-1",
+      "version": "0.1.0",
+      "type": "jar",
+      "scope": "compile",
+      "classifier": "",
+      "optional": "false",
+      "children": [
+        {
+          "groupId": "child-1-1",
+          "artifactId": "child-1-1",
+          "version": "0.1.0",
+          "type": "jar",
+          "scope": "compile",
+          "classifier": "",
+          "optional": "false",
+          "children": [
+            {
+              "groupId": "child-1-1-1",
+              "artifactId": "child-1-1-1",
+              "version": "0.1.0",
+              "type": "jar",
+              "scope": "compile",
+              "classifier": "",
+              "optional": "false"
+            }
+          ]
+        },
+        {
+          "groupId": "child-1-2",
+          "artifactId": "child-1-2",
+          "version": "0.1.0",
+          "type": "jar",
+          "scope": "compile",
+          "classifier": "",
+          "optional": "false"
+        }
+      ]
+    },
+    {
+      "groupId": "child-2",
+      "artifactId": "child-2",
+      "version": "0.1.0",
+      "type": "jar",
+      "scope": "compile",
+      "classifier": "",
+      "optional": "false"
+    }
+  ]
+}
