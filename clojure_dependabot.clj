@@ -329,7 +329,7 @@
   (as-> (gh-api-dependabot-alerts opts) $
         (json/parse-string $ csk/->kebab-case-keyword)
         (filter #(filter-gh-alert % ignore-dependencies) $)
-        (seq $)))
+        (or (seq $) [])))
 
 (defn mk-temp-file [prefix suffix]
   (let [file (Files/createTempFile prefix suffix (into-array FileAttribute []))]
