@@ -23,4 +23,6 @@ export INPUT_REVIEWERS="${INPUT_REVIEWERS:-}"
 export INPUT_SECURITY_UPDATES_ONLY="${INPUT_SECURITY_UPDATES_ONLY:-false}"
 export INPUT_SEVERITY="${INPUT_SEVERITY:-low}"
 
+export LOCAL_DEV='1'
+
 exec bb clojure_dependabot.clj "$@"

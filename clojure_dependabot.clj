@@ -234,12 +234,13 @@
      (filter opts-post-filter)
      (into (github-vars))))
 
-;; Unsafe decision to fix https://github.com/actions/runner/issues/2033
 (defn- configure-git [github-workspace]
-  (log "Configuring git")
-  (sh "git" "config" "--global" "--add" "safe.directory" github-workspace)
-  (sh "git" "config" "--global" "user.email" "github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com")
-  (sh "git" "config" "--global" "user.name" "github-actions[bot]"))
+  (when-not (System/getenv "LOCAL_DEV")
+    (log "Configuring git")
+    (sh "git" "config" "--global" "user.email" "github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com")
+    (sh "git" "config" "--global" "user.name" "github-actions[bot]")
+    ;; Unsafe decision to fix https://github.com/actions/runner/issues/2033
+    (sh "git" "config" "--global" "--add" "safe.directory" github-workspace)))
 
 (defn- install-local-dependencies [{:keys [local-dependencies directory]
                                     :or {local-dependencies ""}}]
