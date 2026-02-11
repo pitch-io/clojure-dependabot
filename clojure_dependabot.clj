@@ -15,6 +15,13 @@
 
 (s/check-asserts true)
 
+(def homepage
+  "https://github.com/pitch-io/clojure-dependabot")
+
+(def version
+  ;; TODO figure out a versioning/release scheme somehow
+  "unversioned")
+
 (def severities
   {"critical" 4
    "high" 3
@@ -302,7 +309,11 @@
             "--branch-ref" github-ref
             "--sha" github-sha
             "--directory" (fs/parent full-path)
-            "--job-name" "clojure-dependabot")))))
+            "--snapshot-exclude-file-name"
+            "--detector-name" "clojure-dependabot"
+            "--detector-url" homepage
+            "--detector-version" version
+            "--job-name" project-path)))))
 
 (defn gh-api-dependabot-alerts
   [{:keys [github-repository github-pat severity]}]

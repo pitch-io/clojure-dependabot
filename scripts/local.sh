@@ -25,4 +25,6 @@ export INPUT_SEVERITY="${INPUT_SEVERITY:-low}"
 
 export LOCAL_DEV='1'
 
+git rev-parse HEAD > git-commit-hash
+
 exec bb clojure_dependabot.clj "$@"
