@@ -1,4 +1,4 @@
-FROM clojure:lein-trixie-slim
+FROM clojure:lein-trixie-slim AS base
 
 LABEL com.github.actions.name="Dependabot for Clojure projects" \
       com.github.actions.description="Run Dependabot as GitHub Action workflow in your Clojure project."

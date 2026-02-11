@@ -15,6 +15,13 @@
 
 (s/check-asserts true)
 
+(def homepage
+  "https://github.com/pitch-io/clojure-dependabot")
+
+(def version
+  ;; TODO figure out a versioning/release scheme somehow
+  "unversioned")
+
 (def severities
   {"critical" 4
    "high" 3
@@ -234,12 +241,13 @@
      (filter opts-post-filter)
      (into (github-vars))))
 
-;; Unsafe decision to fix https://github.com/actions/runner/issues/2033
 (defn- configure-git [github-workspace]
-  (log "Configuring git")
-  (sh "git" "config" "--global" "--add" "safe.directory" github-workspace)
-  (sh "git" "config" "--global" "user.email" "github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com")
-  (sh "git" "config" "--global" "user.name" "github-actions[bot]"))
+  (when-not (System/getenv "LOCAL_DEV")
+    (log "Configuring git")
+    (sh "git" "config" "--global" "user.email" "github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com")
+    (sh "git" "config" "--global" "user.name" "github-actions[bot]")
+    ;; Unsafe decision to fix https://github.com/actions/runner/issues/2033
+    (sh "git" "config" "--global" "--add" "safe.directory" github-workspace)))
 
 (defn- install-local-dependencies [{:keys [local-dependencies directory]
                                     :or {local-dependencies ""}}]
@@ -301,7 +309,11 @@
             "--branch-ref" github-ref
             "--sha" github-sha
             "--directory" (fs/parent full-path)
-            "--job-name" "clojure-dependabot")))))
+            "--snapshot-exclude-file-name"
+            "--detector-name" "clojure-dependabot"
+            "--detector-url" homepage
+            "--detector-version" version
+            "--job-name" project-path)))))
 
 (defn gh-api-dependabot-alerts
   [{:keys [github-repository github-pat severity]}]

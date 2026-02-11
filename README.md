@@ -47,7 +47,7 @@ jobs:
           directory: "foo/bar"
 ```
 
-See [`actions.yml`](./actions.yml) for more details on each option.
+See [`action.yml`](./action.yml) for more details on each option.
 
 ## Development
 
