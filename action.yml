@@ -50,7 +50,7 @@ inputs:
     required: false
     default: ''
   security_updates_only:
-    description: 'Update only vulnerable packages, not outdated ones.'
+    description: 'List and update only vulnerable packages, not outdated ones.'
     required: false
     default: true
   severity:

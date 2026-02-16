@@ -309,6 +309,8 @@
             "--branch-ref" github-ref
             "--sha" github-sha
             "--directory" (fs/parent full-path)
+            ;; TODO this option appears to do nothing, but leaving it for now because it *seems* like what we want
+            ;; https://github.com/advanced-security/maven-dependency-submission-action/issues/122
             "--snapshot-exclude-file-name"
             "--detector-name" "clojure-dependabot"
             "--detector-url" homepage
