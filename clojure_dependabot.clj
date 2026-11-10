@@ -560,9 +560,9 @@
   (sh "git" "commit" file "-m" (str "[bot] Updating dependencies in " file))
   (sh "git" "push" "origin" branch)
   (apply sh (concat ["gh" "pr" "create"
-                     "--base" main-branch]
+                     "--base" main-branch
                      "--title" (str "clojure-dependabot updates: " file)
-                     "--body" body
+                     "--body" body]
                     (if (and (some? reviewers) (not-empty reviewers))
                       ["--reviewers" (str/join "," reviewers)]
                       [])
