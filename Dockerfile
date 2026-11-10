@@ -3,8 +3,14 @@ FROM clojure:lein-trixie-slim AS base
 LABEL com.github.actions.name="Dependabot for Clojure projects" \
       com.github.actions.description="Run Dependabot as GitHub Action workflow in your Clojure project."
 
-RUN export DEBIAN_FRONTEND=noninteractive && \
-    apt-get -qq update && \
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get -qq update && \
+    apt-get -qq upgrade -y && \
+    apt-get -qq auto-remove -y && \
+    apt-get -qq install -y --no-install-recommends curl git maven
+
+RUN apt-get -qq update && \
     apt-get -qq install -y --no-install-recommends curl git maven
 
 RUN set -o pipefail && \
@@ -18,7 +24,6 @@ RUN set -o pipefail && \
     curl --retry 5 --retry-max-time 120 -sSfL https://raw.githubusercontent.com/babashka/babashka/v1.12.214/install | bash
 
 RUN set -o pipefail && \
-    export DEBIAN_FRONTEND=noninteractive && \
     curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg && \
     chmod 0644 /usr/share/keyrings/githubcli-archive-keyring.gpg && \
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list && \
