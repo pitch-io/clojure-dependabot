@@ -326,7 +326,7 @@
     (-> (sh {:extra-env {"GH_TOKEN" github-pat}}
             "gh" "api"
             "-H" "Accept: application/vnd.github+json"
-            (str "/repos/" github-repository "/dependabot/alerts?ecosystem=maven&state=open" sev-str)
+            (str "/repos/" github-repository "/dependabot/alerts?ecosystem=maven&state=open&per_page=100" sev-str)
             "--paginate")
         :out)))
 
