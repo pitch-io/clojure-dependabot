@@ -550,11 +550,17 @@
   (-> (sh "gh" "pr" "list" "--state" "open" "--limit" "1000" "--json" "number,headRefName")
       :out))
 
+(defn- switch-to-workflow-ref
+  [{:keys [github-ref github-sha]}]
+  (if-let [[_ branch] (some->> github-ref (re-matches #"refs/heads/(.+)"))]
+    (sh "git" "switch" branch)
+    (sh "git" "switch" "--detach" github-sha)))
+
 (defn- open-pr
-  [{:keys [file branch body reviewers labels main-branch github-ref]}]
+  [{:keys [file branch body reviewers labels main-branch] :as opts}]
 
   (log "Opening a PR for" file)
-  (sh "git" "switch" github-ref) ;; ensure we're starting on branch that triggered this workflow
+  (switch-to-workflow-ref opts)
   (sh "git" "checkout" "-b" branch)
   ;; TODO a nicer commit message with full details
   (sh "git" "commit" file "-m" (str "[bot] Updating dependencies in" file))
@@ -569,11 +575,11 @@
                     (if (and (some? labels) (not-empty labels))
                       ["--labels" (str/join "," labels)]
                       [])))
-  (sh "git" "switch" github-ref)
+  (switch-to-workflow-ref opts)
   nil)
 
 (defn- update-pr
-  [number {:keys [branch file body github-ref]}]
+  [number {:keys [branch file body] :as opts}]
 
   (log "Updating PR" number)
 
@@ -593,7 +599,7 @@
       (sh "gh" "pr" "edit"
           "--title" (str "clojure-dependabot updates: " file)
           "--body" body)
-      (sh "git" "switch" github-ref)))
+      (switch-to-workflow-ref opts)))
   nil)
 
 (defn- close-pr
