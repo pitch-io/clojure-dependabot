@@ -396,7 +396,7 @@
                        (map (fn [dep] str (:group-id dep) ":" (:artifact-id dep)))
                        set)
         filtered-alerts (filter
-                          (fn [alert] (= (-> alert :depdendency :manifest-path)
+                          (fn [alert] (= (-> alert :dependency :manifest-path)
                                          (:project-path file)))
                           alerts)]
     (str
@@ -415,7 +415,7 @@
                [:tbody (for [alert filtered-alerts]
                          [:tr
                           [:td [:a {:href (:html-url alert)} (:number alert)]]
-                          [:td (-> alert :depdendency :package :name)]
+                          [:td (-> alert :dependency :package :name)]
                           [:td (-> alert :security-advisory :severity)]
                           (let [ghsa (-> alert :security-advisory :ghsa-id)]
                             (if (some? ghsa)
