@@ -606,13 +606,12 @@
 
 (defn- file-changed-in-git?
   [file]
-  {:pre [(s/assert string? file)]
-   :post [(s/assert boolean? %)]}
-
-  (-> (sh "git" "diff" "--porcelain" file)
+  {:pre [(s/assert string? file)]}
+  (-> (sh {:dir (-> file fs/parent str)} "git" "status" "--porcelain" "--" file)
       :out
       str/trim
-      not-empty))
+      not-empty
+      boolean))
 
 (defn- manage-prs
   [alerts outdated files & {:keys [severity security-updates-only]
