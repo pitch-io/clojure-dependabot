@@ -564,10 +564,10 @@
                      "--title" (str "clojure-dependabot updates: " file)
                      "--body" body]
                     (if (and (some? reviewers) (not-empty reviewers))
-                      ["--reviewers" (str/join "," reviewers)]
+                      ["--reviewer" (str/join "," reviewers)]
                       [])
                     (if (and (some? labels) (not-empty labels))
-                      ["--labels" (str/join "," labels)]
+                      ["--label" (str/join "," labels)]
                       [])))
   (sh "git" "switch" github-ref)
   nil)
