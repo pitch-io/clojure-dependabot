@@ -145,7 +145,7 @@
   (let [bool (parse-boolean x)]
     (if (some? bool)
       bool
-      (throw (ex-info "Not a boolean" :value x)))))
+      (throw (ex-info "Not a boolean" {:value x})))))
 
 (defn- slugify [string]
   (as-> string $
