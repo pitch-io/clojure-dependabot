@@ -393,7 +393,7 @@
         flat-deps (->> dep-tree
                        :json
                        flatten-mvn-tree
-                       (map (fn [dep] str (:group-id dep) ":" (:artifact-id dep)))
+                       (map (fn [dep] (str (:group-id dep) ":" (:artifact-id dep))))
                        set)
         filtered-alerts (filter
                           (fn [alert] (= (-> alert :dependency :manifest-path)
