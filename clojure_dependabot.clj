@@ -327,7 +327,7 @@
             "gh" "api"
             "-H" "Accept: application/vnd.github+json"
             (str "/repos/" github-repository "/dependabot/alerts?ecosystem=maven&state=open" sev-str)
-            "--paginate")
+            "--paginate" "--slurp")
         :out)))
 
 (defn- filter-gh-alert [alert ignore-dependencies]
@@ -342,6 +342,7 @@
   (log "Fetching Dependabot alerts")
   (as-> (gh-api-dependabot-alerts opts) $
         (json/parse-string $ csk/->kebab-case-keyword)
+        (apply concat $)
         (filter #(filter-gh-alert % ignore-dependencies) $)
         (or (seq $) [])))
 
