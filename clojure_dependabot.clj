@@ -41,10 +41,14 @@
 (s/def :github/identifier string?)
 
 (s/def :github/first-patched-version
-  (s/keys {:req-un [:github/identifier]}))
+  ;; GitHub returns null when no patched version exists yet
+  (s/nilable (s/keys {:req-un [:github/identifier]})))
+
+(s/def :github/ecosystem (s/and string? not-empty))
 
 (s/def :github/package
-  (s/keys {:req-un [:github/name]}))
+  (s/keys {:req-un [:github/name
+                    :github/ecosystem]}))
 
 (s/def :github/manifest-path string?)
 
@@ -52,14 +56,9 @@
   (s/keys {:req-un [:github/manifest-path
                     :github/package]}))
 
-(s/def :github/ecosystem (s/and string? not-empty))
-
-(s/def :github/package
-  (s/keys {:req-un [:github/ecosystem]
-           :opt-un [:github/first-patched-version]}))
-
 (s/def :github/vulnerability
-  (s/keys {:req-un [:github/package]}))
+  (s/keys {:req-un [:github/package]
+           :opt-un [:github/first-patched-version]}))
 
 (s/def :github/vulnerabilities
   (s/coll-of :github/vulnerability))
@@ -137,9 +136,6 @@
     (when-not (= (-> data :proc .exitValue) 0)
       (throw (ex-info "Process erred" (select-keys data [:out :err :cmd]))))
     data))
-
-(defn- boolean? [x]
-  (instance? Boolean x))
 
 (defn- strict-parse-bool [x]
   (let [bool (parse-boolean x)]
