@@ -427,8 +427,7 @@
               [:details
                [:code [:pre (:text dep-tree)]]]
               "\n\n")
-      (if (nil? outdated)
-        ""
+      (if-let [outdated-deps (not-empty (get outdated (:project-path file)))]
         (h/html
           [:h2 "Outdated Dependencies"]
           "\n\n"
@@ -437,11 +436,12 @@
                         [:th "Version"]
                         [:th "Latest Version"]]]
           "\n"
-           [:tbody (for [od (get outdated (:project-path file) [])]
+           [:tbody (for [od outdated-deps]
                      [:tr
                       [:td (:name od)]
                       [:td (:version od)]
-                      [:td (:latest-version od)]])]])))))
+                      [:td (:latest-version od)]])]])
+        ""))))
 
 (defn- vuln-summaries
   [alerts outdated scannable-files & {:keys [github-step-summary]}]
@@ -526,7 +526,7 @@
                                 (get acc file #{})
                                 reports)))
                {})
-       (filter #(and (some? %) (not-empty %)))
+       (filter #(not-empty (val %)))
        (into {})))
 
 (defn- antq-update [dir package version skip]
