@@ -664,7 +664,7 @@
                                             opts))
               [false false] (log "WARNING: unreachable code for non-existent PR with no changes to" (:project-path file)))))))))
 
-(defn- git-cleanup [{:keys [github-ref github-workspace directory]}]
+(defn- git-cleanup [{:keys [github-workspace directory] :as opts}]
   (log "Cleaning up")
   (sh "git" "restore" "--" (->> (cons github-workspace
                                       (if (and (some? directory) (not-empty directory))
@@ -673,7 +673,7 @@
                                 (apply fs/file)
                                 str))
   ;; TODO delete all the generated pom.xmls ?
-  (sh "git" "checkout" github-ref))
+  (switch-to-workflow-ref opts))
 
 (defn main [& args]
   (when (or (some? args) (not-empty args))
@@ -681,21 +681,27 @@
   (let [opts (parse-opts)]
     (configure-git (:github-workspace opts))
 
-    (let [deps-edn-files (list-files "deps.edn" opts)
-          project-clj-files (list-files "project.clj" opts)
-          all-files (concat deps-edn-files project-clj-files)]
+    (try
+      (let [deps-edn-files (list-files "deps.edn" opts)
+            project-clj-files (list-files "project.clj" opts)
+            all-files (concat deps-edn-files project-clj-files)]
         (install-local-dependencies opts)
         (mvn-scan all-files opts)
         (let [outdated (if-not (:security-updates-only opts)
-                               (list-outdated all-files opts)
-                               nil)
+                         (list-outdated all-files opts)
+                         nil)
               ;; NOTE: fetching alerts *after* so that there's time to allow new reports to appear in the API
               alerts (fetch-dependabot-alerts opts)]
           (vuln-summaries alerts outdated all-files opts)
 
           (when (:auto-pull-request opts)
             (manage-prs alerts outdated all-files opts))))
-    (git-cleanup opts))
+      (finally
+        ;; don't let a cleanup failure mask the original exception
+        (try
+          (git-cleanup opts)
+          (catch Exception e
+            (log "WARNING: cleanup failed:" (.getMessage e)))))))
   (log "Job complete"))
 
 (when (= *file* (System/getProperty "babashka.file"))
