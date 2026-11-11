@@ -244,7 +244,7 @@
 (defn- configure-git [github-workspace]
   (when-not (System/getenv "LOCAL_DEV")
     (log "Configuring git")
-    (sh "git" "config" "--global" "user.email" "github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com")
+    (sh "git" "config" "--global" "user.email" "41898282+github-actions[bot]@users.noreply.github.com")
     (sh "git" "config" "--global" "user.name" "github-actions[bot]")
     ;; Unsafe decision to fix https://github.com/actions/runner/issues/2033
     (sh "git" "config" "--global" "--add" "safe.directory" github-workspace)))
