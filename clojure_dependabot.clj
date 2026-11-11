@@ -557,7 +557,7 @@
   (sh "git" "switch" github-ref) ;; ensure we're starting on branch that triggered this workflow
   (sh "git" "checkout" "-b" branch)
   ;; TODO a nicer commit message with full details
-  (sh "git" "commit" file "-m" (str "[bot] Updating dependencies in" file))
+  (sh "git" "commit" file "-m" (str "[bot] Updating dependencies in " file))
   (sh "git" "push" "origin" branch)
   (apply sh (concat ["gh" "pr" "create"
                      "--base" main-branch]
@@ -588,7 +588,7 @@
                                false)))]
     (when checkout-success
       ;; TODO a nicer commit message with full details
-      (sh "git" "commit" file "-m" (str "[bot] Updating dependencies in" file))
+      (sh "git" "commit" file "-m" (str "[bot] Updating dependencies in " file))
       (sh "git" "push" "origin" branch)
       (sh "gh" "pr" "edit"
           "--title" (str "clojure-dependabot updates: " file)
