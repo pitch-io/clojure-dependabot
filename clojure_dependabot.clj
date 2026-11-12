@@ -41,10 +41,14 @@
 (s/def :github/identifier string?)
 
 (s/def :github/first-patched-version
-  (s/keys {:req-un [:github/identifier]}))
+  ;; GitHub returns null when no patched version exists yet
+  (s/nilable (s/keys {:req-un [:github/identifier]})))
+
+(s/def :github/ecosystem (s/and string? not-empty))
 
 (s/def :github/package
-  (s/keys {:req-un [:github/name]}))
+  (s/keys {:req-un [:github/name
+                    :github/ecosystem]}))
 
 (s/def :github/manifest-path string?)
 
@@ -52,14 +56,9 @@
   (s/keys {:req-un [:github/manifest-path
                     :github/package]}))
 
-(s/def :github/ecosystem (s/and string? not-empty))
-
-(s/def :github/package
-  (s/keys {:req-un [:github/ecosystem]
-           :opt-un [:github/first-patched-version]}))
-
 (s/def :github/vulnerability
-  (s/keys {:req-un [:github/package]}))
+  (s/keys {:req-un [:github/package]
+           :opt-un [:github/first-patched-version]}))
 
 (s/def :github/vulnerabilities
   (s/coll-of :github/vulnerability))
@@ -137,9 +136,6 @@
     (when-not (= (-> data :proc .exitValue) 0)
       (throw (ex-info "Process erred" (select-keys data [:out :err :cmd]))))
     data))
-
-(defn- boolean? [x]
-  (instance? Boolean x))
 
 (defn- strict-parse-bool [x]
   (let [bool (parse-boolean x)]
@@ -327,7 +323,7 @@
             "gh" "api"
             "-H" "Accept: application/vnd.github+json"
             (str "/repos/" github-repository "/dependabot/alerts?ecosystem=maven&state=open" sev-str)
-            "--paginate")
+            "--paginate" "--slurp")
         :out)))
 
 (defn- filter-gh-alert [alert ignore-dependencies]
@@ -342,6 +338,7 @@
   (log "Fetching Dependabot alerts")
   (as-> (gh-api-dependabot-alerts opts) $
         (json/parse-string $ csk/->kebab-case-keyword)
+        (apply concat $)
         (filter #(filter-gh-alert % ignore-dependencies) $)
         (or (seq $) [])))
 
@@ -430,8 +427,7 @@
               [:details
                [:code [:pre (:text dep-tree)]]]
               "\n\n")
-      (if (nil? outdated)
-        ""
+      (if-let [outdated-deps (not-empty (get outdated (:project-path file)))]
         (h/html
           [:h2 "Outdated Dependencies"]
           "\n\n"
@@ -440,11 +436,12 @@
                         [:th "Version"]
                         [:th "Latest Version"]]]
           "\n"
-           [:tbody (for [od (get outdated (:project-path file) [])]
+           [:tbody (for [od outdated-deps]
                      [:tr
                       [:td (:name od)]
                       [:td (:version od)]
-                      [:td (:latest-version od)]])]])))))
+                      [:td (:latest-version od)]])]])
+        ""))))
 
 (defn- vuln-summaries
   [alerts outdated scannable-files & {:keys [github-step-summary]}]
@@ -529,7 +526,7 @@
                                 (get acc file #{})
                                 reports)))
                {})
-       (filter #(and (some? %) (not-empty %)))
+       (filter #(not-empty (val %)))
        (into {})))
 
 (defn- antq-update [dir package version skip]
@@ -550,11 +547,17 @@
   (-> (sh "gh" "pr" "list" "--state" "open" "--limit" "1000" "--json" "number,headRefName")
       :out))
 
+(defn- switch-to-workflow-ref
+  [{:keys [github-ref github-sha]}]
+  (if-let [[_ branch] (some->> github-ref (re-matches #"refs/heads/(.+)"))]
+    (sh "git" "switch" branch)
+    (sh "git" "switch" "--detach" github-sha)))
+
 (defn- open-pr
-  [{:keys [file branch body reviewers labels main-branch github-ref]}]
+  [{:keys [file branch body reviewers labels main-branch] :as opts}]
 
   (log "Opening a PR for" file)
-  (sh "git" "switch" github-ref) ;; ensure we're starting on branch that triggered this workflow
+  (switch-to-workflow-ref opts)
   (sh "git" "checkout" "-b" branch)
   ;; TODO a nicer commit message with full details
   (sh "git" "commit" file "-m" (str "[bot] Updating dependencies in" file))
@@ -569,11 +572,11 @@
                     (if (and (some? labels) (not-empty labels))
                       ["--labels" (str/join "," labels)]
                       [])))
-  (sh "git" "switch" github-ref)
+  (switch-to-workflow-ref opts)
   nil)
 
 (defn- update-pr
-  [number {:keys [branch file body github-ref]}]
+  [number {:keys [branch file body] :as opts}]
 
   (log "Updating PR" number)
 
@@ -593,7 +596,7 @@
       (sh "gh" "pr" "edit"
           "--title" (str "clojure-dependabot updates: " file)
           "--body" body)
-      (sh "git" "switch" github-ref)))
+      (switch-to-workflow-ref opts)))
   nil)
 
 (defn- close-pr
@@ -606,13 +609,12 @@
 
 (defn- file-changed-in-git?
   [file]
-  {:pre [(s/assert string? file)]
-   :post [(s/assert boolean? %)]}
-
-  (-> (sh "git" "diff" "--porcelain" file)
+  {:pre [(s/assert string? file)]}
+  (-> (sh {:dir (-> file fs/parent str)} "git" "status" "--porcelain" "--" file)
       :out
       str/trim
-      not-empty))
+      not-empty
+      boolean))
 
 (defn- manage-prs
   [alerts outdated files & {:keys [severity security-updates-only]
@@ -626,8 +628,9 @@
     (doseq [file files]
       ;; TODO check that target file is clean
       (let [skip (if (= (fs/file-name (:full-path file)) "deps.edn")
-                     "clojure-cli"
-                     "leiningen")]
+                     "leiningen"
+                     "clojure-cli")
+            project-dir (-> file :full-path fs/parent str)]
 
         ;; TODO merge all the update calls from both sec and outdated
         (doseq [alert (filter (fn [alert] (= (-> alert :dependency :manifest-path)
@@ -636,12 +639,12 @@
           (doseq [vuln (-> alert :security-advisory :vulnerabilities)]
             ;; TODO see if we can opportunistically pull the version from the outdated list
             ;; TODO do all the updates at once with multiple --focus calls
-            (antq-update (:full-path file) (-> vuln :package :name) nil skip))
+            (antq-update project-dir (-> vuln :package :name) nil skip))
 
         (when-not security-updates-only
           (doseq [od (get outdated (:project-path file) [])]
             ;; TODO do all the updates at once with multiple --focus calls
-            (antq-update (:full-path file) (:name od) (:latest-version od) skip)))
+            (antq-update project-dir (:name od) (:latest-version od) skip)))
 
           ;; NOTE: avoid changing the branch name as it will break the logic
           (let [pr-branch (str "clojure-dependabot/" (slugify (:project-path file)))
@@ -661,7 +664,7 @@
                                             opts))
               [false false] (log "WARNING: unreachable code for non-existent PR with no changes to" (:project-path file)))))))))
 
-(defn- git-cleanup [{:keys [github-ref github-workspace directory]}]
+(defn- git-cleanup [{:keys [github-workspace directory] :as opts}]
   (log "Cleaning up")
   (sh "git" "restore" "--" (->> (cons github-workspace
                                       (if (and (some? directory) (not-empty directory))
@@ -670,7 +673,7 @@
                                 (apply fs/file)
                                 str))
   ;; TODO delete all the generated pom.xmls ?
-  (sh "git" "checkout" github-ref))
+  (switch-to-workflow-ref opts))
 
 (defn main [& args]
   (when (or (some? args) (not-empty args))
@@ -678,21 +681,27 @@
   (let [opts (parse-opts)]
     (configure-git (:github-workspace opts))
 
-    (let [deps-edn-files (list-files "deps.edn" opts)
-          project-clj-files (list-files "project.clj" opts)
-          all-files (concat deps-edn-files project-clj-files)]
+    (try
+      (let [deps-edn-files (list-files "deps.edn" opts)
+            project-clj-files (list-files "project.clj" opts)
+            all-files (concat deps-edn-files project-clj-files)]
         (install-local-dependencies opts)
         (mvn-scan all-files opts)
         (let [outdated (if-not (:security-updates-only opts)
-                               (list-outdated all-files opts)
-                               nil)
+                         (list-outdated all-files opts)
+                         nil)
               ;; NOTE: fetching alerts *after* so that there's time to allow new reports to appear in the API
               alerts (fetch-dependabot-alerts opts)]
           (vuln-summaries alerts outdated all-files opts)
 
           (when (:auto-pull-request opts)
             (manage-prs alerts outdated all-files opts))))
-    (git-cleanup opts))
+      (finally
+        ;; don't let a cleanup failure mask the original exception
+        (try
+          (git-cleanup opts)
+          (catch Exception e
+            (log "WARNING: cleanup failed:" (.getMessage e)))))))
   (log "Job complete"))
 
 (when (= *file* (System/getProperty "babashka.file"))
