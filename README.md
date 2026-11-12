@@ -19,7 +19,8 @@ The Action requires the following environment variables to run the [maven-depend
 
 ## Example
 
-```
+```yaml
+---
 name: Dependabot for Clojure
 
 on:
