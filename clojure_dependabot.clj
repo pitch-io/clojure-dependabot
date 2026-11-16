@@ -549,14 +549,14 @@
       :out))
 
 (defn- open-pr
-  [{:keys [file branch body reviewers labels main-branch github-ref]}]
+  [{:keys [file branch body reviewers labels main-branch github-ref github-workspace]}]
 
   (log "Opening a PR for" file)
-  (sh "git" "switch" github-ref) ;; ensure we're starting on branch that triggered this workflow
-  (sh "git" "checkout" "-b" branch)
+  (sh {:dir github-workspace} "git" "switch" github-ref) ;; ensure we're starting on branch that triggered this workflow
+  (sh {:dir github-workspace} "git" "checkout" "-b" branch)
   ;; TODO a nicer commit message with full details
-  (sh "git" "commit" file "-m" (str "[bot] Updating dependencies in " file))
-  (sh "git" "push" "origin" branch)
+  (sh {:dir github-workspace} "git" "commit" file "-m" (str "[bot] Updating dependencies in " file))
+  (sh {:dir github-workspace} "git" "push" "origin" branch)
   (apply sh (concat ["gh" "pr" "create"
                      "--base" main-branch
                      "--title" (str "clojure-dependabot updates: " file)
@@ -567,18 +567,18 @@
                     (if (and (some? labels) (not-empty labels))
                       ["--label" (str/join "," labels)]
                       [])))
-  (sh "git" "switch" github-ref)
+  (sh {:dir github-workspace} "git" "switch" github-ref)
   nil)
 
 (defn- update-pr
-  [number {:keys [branch file body github-ref]}]
+  [number {:keys [branch file body github-ref github-workspace]}]
 
   (log "Updating PR" number)
 
-  (sh "git" "fetch")
+  (sh {:dir github-workspace} "git" "fetch")
   (let [checkout-success (try
                            (do
-                             (sh "git" "checkout" branch)
+                             (sh {:dir github-workspace} "git" "checkout" branch)
                              true)
                            (catch Exception e
                              (do
@@ -586,12 +586,12 @@
                                false)))]
     (when checkout-success
       ;; TODO a nicer commit message with full details
-      (sh "git" "commit" file "-m" (str "[bot] Updating dependencies in " file))
-      (sh "git" "push" "origin" branch)
+      (sh {:dir github-workspace} "git" "commit" file "-m" (str "[bot] Updating dependencies in " file))
+      (sh {:dir github-workspace} "git" "push" "origin" branch)
       (sh "gh" "pr" "edit"
           "--title" (str "clojure-dependabot updates: " file)
           "--body" body)
-      (sh "git" "switch" github-ref)))
+      (sh {:dir github-workspace} "git" "switch" github-ref)))
   nil)
 
 (defn- close-pr
@@ -604,13 +604,12 @@
 
 (defn- file-changed-in-git?
   [file]
-  {:pre [(s/assert string? file)]
-   :post [(s/assert boolean? %)]}
-
-  (-> (sh "git" "diff" "--porcelain" file)
+  {:pre [(s/assert string? file)]}
+  (-> (sh {:dir (-> file fs/parent str)} "git" "status" "--porcelain" "--" file)
       :out
       str/trim
-      not-empty))
+      not-empty
+      boolean))
 
 (defn- manage-prs
   [alerts outdated files & {:keys [severity security-updates-only]
@@ -661,14 +660,15 @@
 
 (defn- git-cleanup [{:keys [github-ref github-workspace directory]}]
   (log "Cleaning up")
-  (sh "git" "restore" "--" (->> (cons github-workspace
+  (sh {:dir github-workspace}
+      "git" "restore" "--" (->> (cons github-workspace
                                       (if (and (some? directory) (not-empty directory))
                                           [directory]
                                           []))
                                 (apply fs/file)
                                 str))
   ;; TODO delete all the generated pom.xmls ?
-  (sh "git" "checkout" github-ref))
+  (sh {:dir github-workspace} "git" "checkout" github-ref))
 
 (defn main [& args]
   (when (or (some? args) (not-empty args))
