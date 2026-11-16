@@ -159,6 +159,12 @@
   [ref]
   (str/replace-first ref #"^refs/heads/" ""))
 
+(defn- gh-package->antq-name
+  "GitHub names Maven packages `group:artifact`, while antq (and its `--focus`
+  option) names them `group/artifact`."
+  [package-name]
+  (str/replace-first package-name ":" "/"))
+
 (defn- severities-above [sev]
   (->> severities
        (filter #(>= (second %) (get severities sev 0)))
@@ -635,36 +641,37 @@
             project-dir (-> file :full-path fs/parent str)]
 
         ;; TODO merge all the update calls from both sec and outdated
-        (doseq [alert (filter (fn [alert] (= (-> alert :dependency :manifest-path)
-                                             (:project-path file)))
-                              alerts)]
-          (doseq [vuln (-> alert :security-advisory :vulnerabilities)]
-            ;; TODO see if we can opportunistically pull the version from the outdated list
-            ;; TODO do all the updates at once with multiple --focus calls
-            (antq-update project-dir (-> vuln :package :name) nil skip))
+        (doseq [package (->> alerts
+                             (filter (fn [alert] (= (-> alert :dependency :manifest-path)
+                                                    (:project-path file))))
+                             (map #(-> % :dependency :package :name gh-package->antq-name))
+                             distinct)]
+          ;; TODO see if we can opportunistically pull the version from the outdated list
+          ;; TODO do all the updates at once with multiple --focus calls
+          (antq-update project-dir package nil skip))
 
         (when-not security-updates-only
           (doseq [od (get outdated (:project-path file) [])]
             ;; TODO do all the updates at once with multiple --focus calls
             (antq-update project-dir (:name od) (:latest-version od) skip)))
 
-          ;; NOTE: avoid changing the branch name as it will break the logic
-          (let [pr-branch (str "clojure-dependabot/" (slugify (:project-path file)))
-                existing-pr-number (get open-prs pr-branch nil)
-                changed? (-> file :full-path file-changed-in-git?)
-                pr-body-fn #(vuln-summary file alerts outdated)]
-            (case [(some? existing-pr-number) changed?]
-              [false true] (open-pr (merge {:file (:project-path file)
-                                            :branch pr-branch
-                                            :body (pr-body-fn)}
-                                           opts))
-              [true false] (close-pr existing-pr-number)
-              [true true] (update-pr existing-pr-number
-                                     (merge {:file (:project-path file)
-                                             :branch pr-branch
-                                             :body (pr-body-fn)}
-                                            opts))
-              [false false] (log "WARNING: unreachable code for non-existent PR with no changes to" (:project-path file)))))))))
+        ;; NOTE: avoid changing the branch name as it will break the logic
+        (let [pr-branch (str "clojure-dependabot/" (slugify (:project-path file)))
+              existing-pr-number (get open-prs pr-branch nil)
+              changed? (-> file :full-path file-changed-in-git?)
+              pr-body-fn #(vuln-summary file alerts outdated)]
+          (case [(some? existing-pr-number) changed?]
+            [false true] (open-pr (merge {:file (:project-path file)
+                                          :branch pr-branch
+                                          :body (pr-body-fn)}
+                                         opts))
+            [true false] (close-pr existing-pr-number)
+            [true true] (update-pr existing-pr-number
+                                   (merge {:file (:project-path file)
+                                           :branch pr-branch
+                                           :body (pr-body-fn)}
+                                          opts))
+            [false false] (log "No updates for" (:project-path file) "- no PR needed"))))))))
 
 (defn- git-cleanup [{:keys [github-ref github-workspace directory]}]
   (log "Cleaning up")

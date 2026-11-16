@@ -134,8 +134,7 @@
           project-dir (str (babashka.fs/create-dirs (babashka.fs/path workspace "foo")))
           file {:full-path (str (babashka.fs/path project-dir "deps.edn"))
                 :project-path "foo/deps.edn"}
-          alerts [{:dependency {:manifest-path "foo/deps.edn"}
-                   :security-advisory {:vulnerabilities [{:package {:name "foo:bar"}}]}}]
+          alerts [{:dependency {:manifest-path "foo/deps.edn" :package {:name "foo:bar"}}}]
           outdated {"foo/deps.edn" #{{:name "baz/quux" :latest-version "1.0.0"}}}
           dirs (atom [])]
       (try
@@ -145,6 +144,79 @@
                       clojure-dependabot/file-changed-in-git? (constantly false)]
           (#'clojure-dependabot/manage-prs alerts outdated [file] {:security-updates-only false}))
         (is (= [project-dir project-dir] @dirs))
+        (finally
+          (babashka.fs/delete-tree workspace))))))
+
+(deftest test-gh-package->antq-name
+  (let [gh-package->antq-name #'clojure-dependabot/gh-package->antq-name]
+    (is (= "com.fasterxml.jackson.core/jackson-databind"
+           (gh-package->antq-name "com.fasterxml.jackson.core:jackson-databind")))
+    (is (= "foo/bar" (gh-package->antq-name "foo/bar")) "antq-style names are unchanged")))
+
+(deftest test-manage-prs-antq-update-package-names
+  (testing "packages are passed to antq-update in antq's group/artifact form"
+    (let [workspace (str (babashka.fs/create-temp-dir))
+          file {:full-path (str (babashka.fs/path workspace "deps.edn"))
+                :project-path "deps.edn"}
+          alerts [{:dependency {:manifest-path "deps.edn" :package {:name "foo:bar"}}}]
+          outdated {"deps.edn" #{{:name "baz/quux" :latest-version "1.0.0"}}}
+          packages (atom [])]
+      (try
+        (with-redefs [babashka.process/sh bail
+                      clojure-dependabot/list-prs (constantly "[]")
+                      clojure-dependabot/antq-update (fn [_dir package & _] (swap! packages conj package))
+                      clojure-dependabot/file-changed-in-git? (constantly false)]
+          (#'clojure-dependabot/manage-prs alerts outdated [file] {:security-updates-only false}))
+        (is (= ["foo/bar" "baz/quux"] @packages))
+        (finally
+          (babashka.fs/delete-tree workspace))))))
+
+(deftest test-manage-prs-security-updates-use-alert-package
+  (testing "security updates target each alert's own package, once, not every package in the advisory"
+    (let [workspace (str (babashka.fs/create-temp-dir))
+          file {:full-path (str (babashka.fs/path workspace "deps.edn"))
+                :project-path "deps.edn"}
+          advisory {:vulnerabilities [{:package {:name "foo:bar"}}
+                                      {:package {:name "not:in-this-project"}}]}
+          alerts [{:dependency {:manifest-path "deps.edn" :package {:name "foo:bar"}}
+                   :security-advisory advisory}
+                  ;; a second alert for the same package, e.g. from a different advisory
+                  {:dependency {:manifest-path "deps.edn" :package {:name "foo:bar"}}
+                   :security-advisory advisory}
+                  ;; an alert for a different project
+                  {:dependency {:manifest-path "other/deps.edn" :package {:name "baz:quux"}}
+                   :security-advisory advisory}]
+          packages (atom [])]
+      (try
+        (with-redefs [babashka.process/sh bail
+                      clojure-dependabot/list-prs (constantly "[]")
+                      clojure-dependabot/antq-update (fn [_dir package & _] (swap! packages conj package))
+                      clojure-dependabot/file-changed-in-git? (constantly false)]
+          (#'clojure-dependabot/manage-prs alerts {} [file] {:security-updates-only true}))
+        (is (= ["foo/bar"] @packages))
+        (finally
+          (babashka.fs/delete-tree workspace))))))
+
+(deftest test-manage-prs-handles-each-project-once
+  (testing "PRs are managed once per project, regardless of how many alerts it has (including none)"
+    (let [workspace (str (babashka.fs/create-temp-dir))
+          many-alerts {:full-path (str (babashka.fs/path workspace "a" "deps.edn"))
+                       :project-path "a/deps.edn"}
+          no-alerts {:full-path (str (babashka.fs/path workspace "b" "deps.edn"))
+                     :project-path "b/deps.edn"}
+          alerts [{:dependency {:manifest-path "a/deps.edn" :package {:name "foo:bar"}}}
+                  {:dependency {:manifest-path "a/deps.edn" :package {:name "baz:quux"}}}]
+          calls (atom [])]
+      (try
+        (with-redefs [babashka.process/sh bail
+                      clojure-dependabot/list-prs (constantly "[{\"number\": 7, \"headRefName\": \"clojure-dependabot/b-deps-edn\"}]")
+                      clojure-dependabot/antq-update (constantly nil)
+                      clojure-dependabot/vuln-summary (constantly "body")
+                      clojure-dependabot/file-changed-in-git? #(= % (:full-path many-alerts))
+                      clojure-dependabot/open-pr (fn [{:keys [file]}] (swap! calls conj [:open file]))
+                      clojure-dependabot/close-pr (fn [number] (swap! calls conj [:close number]))]
+          (#'clojure-dependabot/manage-prs alerts {} [many-alerts no-alerts] {:security-updates-only true}))
+        (is (= [[:open "a/deps.edn"] [:close 7]] @calls))
         (finally
           (babashka.fs/delete-tree workspace))))))
 
