@@ -623,8 +623,8 @@
     (doseq [file files]
       ;; TODO check that target file is clean
       (let [skip (if (= (fs/file-name (:full-path file)) "deps.edn")
-                     "clojure-cli"
-                     "leiningen")]
+                     "leiningen"
+                     "clojure-cli")]
 
         ;; TODO merge all the update calls from both sec and outdated
         (doseq [alert (filter (fn [alert] (= (-> alert :dependency :manifest-path)
