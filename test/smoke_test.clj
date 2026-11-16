@@ -128,6 +128,26 @@
            {:name "foo/bar" :version "1.2.3"}
            [{:group-id "foo" :artifact-id "bar" :version "4.5.6"}]))))
 
+(deftest test-manage-prs-antq-update-dir
+  (testing "antq-update is run in the project's directory, not on the project file"
+    (let [workspace (str (babashka.fs/create-temp-dir))
+          project-dir (str (babashka.fs/create-dirs (babashka.fs/path workspace "foo")))
+          file {:full-path (str (babashka.fs/path project-dir "deps.edn"))
+                :project-path "foo/deps.edn"}
+          alerts [{:dependency {:manifest-path "foo/deps.edn"}
+                   :security-advisory {:vulnerabilities [{:package {:name "foo:bar"}}]}}]
+          outdated {"foo/deps.edn" #{{:name "baz/quux" :latest-version "1.0.0"}}}
+          dirs (atom [])]
+      (try
+        (with-redefs [babashka.process/sh bail
+                      clojure-dependabot/list-prs (constantly "[]")
+                      clojure-dependabot/antq-update (fn [dir & _] (swap! dirs conj dir))
+                      clojure-dependabot/file-changed-in-git? (constantly false)]
+          (#'clojure-dependabot/manage-prs alerts outdated [file] {:security-updates-only false}))
+        (is (= [project-dir project-dir] @dirs))
+        (finally
+          (babashka.fs/delete-tree workspace))))))
+
 (deftest test-ref->branch
   (let [ref->branch #'clojure-dependabot/ref->branch]
     (is (= "main" (ref->branch "refs/heads/main")))
