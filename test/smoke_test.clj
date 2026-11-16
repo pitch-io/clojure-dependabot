@@ -128,6 +128,12 @@
            {:name "foo/bar" :version "1.2.3"}
            [{:group-id "foo" :artifact-id "bar" :version "4.5.6"}]))))
 
+(deftest test-ref->branch
+  (let [ref->branch #'clojure-dependabot/ref->branch]
+    (is (= "main" (ref->branch "refs/heads/main")))
+    (is (= "feature/refs/heads/x" (ref->branch "refs/heads/feature/refs/heads/x")))
+    (is (= "main" (ref->branch "main")))))
+
 (deftest test-parse-ignore-dependencies
   (is (= (parse-ignore-dependencies "foo:bar:1.2.3") (seq [{:group-id "foo" :artifact-id "bar" :version "1.2.3"}])))
   (is (= (parse-ignore-dependencies "foo:bar") (seq [{:group-id "foo" :artifact-id "bar"}]))))

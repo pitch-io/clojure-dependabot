@@ -153,6 +153,12 @@
       (filter not-empty $)
       (str/join "-" $)))
 
+(defn- ref->branch
+  "Converts a full git ref (e.g. GITHUB_REF=refs/heads/main) to the short branch
+  name that `git switch` requires. Short names are returned unchanged."
+  [ref]
+  (str/replace-first ref #"^refs/heads/" ""))
+
 (defn- severities-above [sev]
   (->> severities
        (filter #(>= (second %) (get severities sev 0)))
@@ -552,7 +558,7 @@
   [{:keys [file branch body reviewers labels main-branch github-ref github-workspace]}]
 
   (log "Opening a PR for" file)
-  (sh {:dir github-workspace} "git" "switch" github-ref) ;; ensure we're starting on branch that triggered this workflow
+  (sh {:dir github-workspace} "git" "switch" (ref->branch github-ref)) ;; ensure we're starting on branch that triggered this workflow
   (sh {:dir github-workspace} "git" "checkout" "-b" branch)
   ;; TODO a nicer commit message with full details
   (sh {:dir github-workspace} "git" "commit" file "-m" (str "[bot] Updating dependencies in " file))
@@ -567,7 +573,7 @@
                     (if (and (some? labels) (not-empty labels))
                       ["--label" (str/join "," labels)]
                       [])))
-  (sh {:dir github-workspace} "git" "switch" github-ref)
+  (sh {:dir github-workspace} "git" "switch" (ref->branch github-ref))
   nil)
 
 (defn- update-pr
@@ -591,7 +597,7 @@
       (sh "gh" "pr" "edit"
           "--title" (str "clojure-dependabot updates: " file)
           "--body" body)
-      (sh {:dir github-workspace} "git" "switch" github-ref)))
+      (sh {:dir github-workspace} "git" "switch" (ref->branch github-ref))))
   nil)
 
 (defn- close-pr
@@ -668,7 +674,7 @@
                                 (apply fs/file)
                                 str))
   ;; TODO delete all the generated pom.xmls ?
-  (sh {:dir github-workspace} "git" "checkout" github-ref))
+  (sh {:dir github-workspace} "git" "checkout" (ref->branch github-ref)))
 
 (defn main [& args]
   (when (or (some? args) (not-empty args))
