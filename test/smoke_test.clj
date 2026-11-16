@@ -133,7 +133,7 @@
   (is (= (parse-ignore-dependencies "foo:bar") (seq [{:group-id "foo" :artifact-id "bar"}]))))
 
 (deftest test-fetch-dependabot-alerts
-  (testing "the whole thing works when (most) I/O is mocked away"
+  (testing "paginated responses parse all arrays of responses"
     (with-redefs [clojure-dependabot/gh-api-dependabot-alerts mock-gh-api-dependabot-alerts]
       (let [parsed-results (clojure-dependabot/fetch-dependabot-alerts {})]
         (is (= (->> parsed-results
