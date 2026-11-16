@@ -5,6 +5,14 @@ cd "$(dirname "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")")"
 
 # Run 'clojure-dependabot' in the Docker container
 
+WORKSPACE="${GITHUB_WORKSPACE:?'env var not set. example: ../my-project/'}"
+WORKSPACE="$(readlink -f "$WORKSPACE")"
+if [[ ! -d "$WORKSPACE" ]]; then
+    echo "GITHUB_WORKSPACE is not a directory: $GITHUB_WORKSPACE"
+    exit 1
+fi
+declare -r WORKSPACE
+
 declare -r TAG=pitch/clojure-dependabot:latest
 docker build -t "$TAG" --build-arg "PULL_DEPENDENCIES=${PULL_DEPENDENCIES:-1}" .
 
@@ -35,7 +43,7 @@ declare -a CMD=(
     --rm -t
     -v "$HOME/.m2:/root/.m2/"
     -v "$HOME/.gitlibs:/root/.gitlibs/"
-    -v "../pitch-app:$SRC"
+    -v "$WORKSPACE:$SRC"
     -w "$SRC"
 )
 
