@@ -671,7 +671,7 @@
                                            :branch pr-branch
                                            :body (pr-body-fn)}
                                           opts))
-            [false false] (log "WARNING: unreachable code for non-existent PR with no changes to" (:project-path file))))))))
+            [false false] (log "No updates for" (:project-path file) "- no PR needed"))))))))
 
 (defn- git-cleanup [{:keys [github-ref github-workspace directory]}]
   (log "Cleaning up")
