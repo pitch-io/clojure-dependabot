@@ -148,6 +148,31 @@
         (finally
           (babashka.fs/delete-tree workspace))))))
 
+(deftest test-gh-package->antq-name
+  (let [gh-package->antq-name #'clojure-dependabot/gh-package->antq-name]
+    (is (= "com.fasterxml.jackson.core/jackson-databind"
+           (gh-package->antq-name "com.fasterxml.jackson.core:jackson-databind")))
+    (is (= "foo/bar" (gh-package->antq-name "foo/bar")) "antq-style names are unchanged")))
+
+(deftest test-manage-prs-antq-update-package-names
+  (testing "packages are passed to antq-update in antq's group/artifact form"
+    (let [workspace (str (babashka.fs/create-temp-dir))
+          file {:full-path (str (babashka.fs/path workspace "deps.edn"))
+                :project-path "deps.edn"}
+          alerts [{:dependency {:manifest-path "deps.edn"}
+                   :security-advisory {:vulnerabilities [{:package {:name "foo:bar"}}]}}]
+          outdated {"deps.edn" #{{:name "baz/quux" :latest-version "1.0.0"}}}
+          packages (atom [])]
+      (try
+        (with-redefs [babashka.process/sh bail
+                      clojure-dependabot/list-prs (constantly "[]")
+                      clojure-dependabot/antq-update (fn [_dir package & _] (swap! packages conj package))
+                      clojure-dependabot/file-changed-in-git? (constantly false)]
+          (#'clojure-dependabot/manage-prs alerts outdated [file] {:security-updates-only false}))
+        (is (= ["foo/bar" "baz/quux"] @packages))
+        (finally
+          (babashka.fs/delete-tree workspace))))))
+
 (deftest test-ref->branch
   (let [ref->branch #'clojure-dependabot/ref->branch]
     (is (= "main" (ref->branch "refs/heads/main")))

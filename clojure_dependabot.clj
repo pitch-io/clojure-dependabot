@@ -159,6 +159,12 @@
   [ref]
   (str/replace-first ref #"^refs/heads/" ""))
 
+(defn- gh-package->antq-name
+  "GitHub names Maven packages `group:artifact`, while antq (and its `--focus`
+  option) names them `group/artifact`."
+  [package-name]
+  (str/replace-first package-name ":" "/"))
+
 (defn- severities-above [sev]
   (->> severities
        (filter #(>= (second %) (get severities sev 0)))
@@ -641,7 +647,7 @@
           (doseq [vuln (-> alert :security-advisory :vulnerabilities)]
             ;; TODO see if we can opportunistically pull the version from the outdated list
             ;; TODO do all the updates at once with multiple --focus calls
-            (antq-update project-dir (-> vuln :package :name) nil skip))
+            (antq-update project-dir (-> vuln :package :name gh-package->antq-name) nil skip))
 
         (when-not security-updates-only
           (doseq [od (get outdated (:project-path file) [])]
