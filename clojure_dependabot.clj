@@ -537,6 +537,7 @@
        (into {})))
 
 (defn- antq-update [dir package version skip]
+  {:pre [(s/assert fs/directory? dir)]}
   (log "Updating" (pr-str package) "in" (pr-str dir))
   (-> (sh {:dir dir}
           "clojure"
@@ -630,7 +631,8 @@
       ;; TODO check that target file is clean
       (let [skip (if (= (fs/file-name (:full-path file)) "deps.edn")
                      "leiningen"
-                     "clojure-cli")]
+                     "clojure-cli")
+            project-dir (-> file :full-path fs/parent str)]
 
         ;; TODO merge all the update calls from both sec and outdated
         (doseq [alert (filter (fn [alert] (= (-> alert :dependency :manifest-path)
@@ -639,12 +641,12 @@
           (doseq [vuln (-> alert :security-advisory :vulnerabilities)]
             ;; TODO see if we can opportunistically pull the version from the outdated list
             ;; TODO do all the updates at once with multiple --focus calls
-            (antq-update (:full-path file) (-> vuln :package :name) nil skip))
+            (antq-update project-dir (-> vuln :package :name) nil skip))
 
         (when-not security-updates-only
           (doseq [od (get outdated (:project-path file) [])]
             ;; TODO do all the updates at once with multiple --focus calls
-            (antq-update (:full-path file) (:name od) (:latest-version od) skip)))
+            (antq-update project-dir (:name od) (:latest-version od) skip)))
 
           ;; NOTE: avoid changing the branch name as it will break the logic
           (let [pr-branch (str "clojure-dependabot/" (slugify (:project-path file)))
