@@ -145,7 +145,7 @@
   (let [bool (parse-boolean x)]
     (if (some? bool)
       bool
-      (throw (ex-info "Not a boolean" :value x)))))
+      (throw (ex-info "Not a boolean" {:value x})))))
 
 (defn- slugify [string]
   (as-> string $
@@ -244,7 +244,7 @@
 (defn- configure-git [github-workspace]
   (when-not (System/getenv "LOCAL_DEV")
     (log "Configuring git")
-    (sh "git" "config" "--global" "user.email" "github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com")
+    (sh "git" "config" "--global" "user.email" "41898282+github-actions[bot]@users.noreply.github.com")
     (sh "git" "config" "--global" "user.name" "github-actions[bot]")
     ;; Unsafe decision to fix https://github.com/actions/runner/issues/2033
     (sh "git" "config" "--global" "--add" "safe.directory" github-workspace)))
@@ -326,7 +326,7 @@
     (-> (sh {:extra-env {"GH_TOKEN" github-pat}}
             "gh" "api"
             "-H" "Accept: application/vnd.github+json"
-            (str "/repos/" github-repository "/dependabot/alerts?ecosystem=maven&state=open" sev-str)
+            (str "/repos/" github-repository "/dependabot/alerts?ecosystem=maven&state=open&per_page=100" sev-str)
             "--paginate")
         :out)))
 
@@ -393,10 +393,10 @@
         flat-deps (->> dep-tree
                        :json
                        flatten-mvn-tree
-                       (map (fn [dep] str (:group-id dep) ":" (:artifact-id dep)))
+                       (map (fn [dep] (str (:group-id dep) ":" (:artifact-id dep))))
                        set)
         filtered-alerts (filter
-                          (fn [alert] (= (-> alert :depdendency :manifest-path)
+                          (fn [alert] (= (-> alert :dependency :manifest-path)
                                          (:project-path file)))
                           alerts)]
     (str
@@ -415,7 +415,7 @@
                [:tbody (for [alert filtered-alerts]
                          [:tr
                           [:td [:a {:href (:html-url alert)} (:number alert)]]
-                          [:td (-> alert :depdendency :package :name)]
+                          [:td (-> alert :dependency :package :name)]
                           [:td (-> alert :security-advisory :severity)]
                           (let [ghsa (-> alert :security-advisory :ghsa-id)]
                             (if (some? ghsa)
@@ -557,17 +557,17 @@
   (sh "git" "switch" github-ref) ;; ensure we're starting on branch that triggered this workflow
   (sh "git" "checkout" "-b" branch)
   ;; TODO a nicer commit message with full details
-  (sh "git" "commit" file "-m" (str "[bot] Updating dependencies in" file))
+  (sh "git" "commit" file "-m" (str "[bot] Updating dependencies in " file))
   (sh "git" "push" "origin" branch)
   (apply sh (concat ["gh" "pr" "create"
-                     "--base" main-branch]
+                     "--base" main-branch
                      "--title" (str "clojure-dependabot updates: " file)
-                     "--body" body
+                     "--body" body]
                     (if (and (some? reviewers) (not-empty reviewers))
-                      ["--reviewers" (str/join "," reviewers)]
+                      ["--reviewer" (str/join "," reviewers)]
                       [])
                     (if (and (some? labels) (not-empty labels))
-                      ["--labels" (str/join "," labels)]
+                      ["--label" (str/join "," labels)]
                       [])))
   (sh "git" "switch" github-ref)
   nil)
@@ -588,7 +588,7 @@
                                false)))]
     (when checkout-success
       ;; TODO a nicer commit message with full details
-      (sh "git" "commit" file "-m" (str "[bot] Updating dependencies in" file))
+      (sh "git" "commit" file "-m" (str "[bot] Updating dependencies in " file))
       (sh "git" "push" "origin" branch)
       (sh "gh" "pr" "edit"
           "--title" (str "clojure-dependabot updates: " file)
