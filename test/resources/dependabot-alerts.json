@@ -137,7 +137,9 @@
       "dismissed_reason": "tolerable_risk",
       "dismissed_comment": "This alert is accurate but we use a sanitizer.",
       "fixed_at": null
-    },
+    }
+  ],
+  [
     {
       "number": 1,
       "state": "open",

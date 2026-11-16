@@ -132,6 +132,15 @@
   (is (= (parse-ignore-dependencies "foo:bar:1.2.3") (seq [{:group-id "foo" :artifact-id "bar" :version "1.2.3"}])))
   (is (= (parse-ignore-dependencies "foo:bar") (seq [{:group-id "foo" :artifact-id "bar"}]))))
 
+(deftest test-fetch-dependabot-alerts
+  (testing "the whole thing works when (most) I/O is mocked away"
+    (with-redefs [clojure-dependabot/gh-api-dependabot-alerts mock-gh-api-dependabot-alerts]
+      (let [parsed-results (clojure-dependabot/fetch-dependabot-alerts {})]
+        (is (= (->> parsed-results
+                    (map :number)
+                    (into #{}))
+               #{1 2}))))))
+
 (deftest the-whole-shebang
   (testing "the whole thing works when (most) I/O is mocked away"
     (with-redefs [babashka.process/sh bail
