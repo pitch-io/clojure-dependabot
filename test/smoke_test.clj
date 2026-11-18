@@ -3,6 +3,7 @@
     [camel-snake-kebab.core :as csk]
     [cheshire.core :as json]
     [clojure.java.io :as io]
+    [clojure.string :as str]
     [clojure.test :refer [deftest is testing]]
     [clojure-dependabot :refer [main flatten-mvn-tree list-outdated severities-above keys-eq-not-nil antq-dependency-matches
                                 antq-dependency-should-keep antq-dependency-matches parse-ignore-dependencies slugify]]))
@@ -219,6 +220,112 @@
         (is (= [[:open "a/deps.edn"] [:close 7]] @calls))
         (finally
           (babashka.fs/delete-tree workspace))))))
+
+(defn- git! [dir & args]
+  (let [{:keys [exit out err]} (apply babashka.process/sh {:dir (str dir)} "git" args)]
+    (when-not (zero? exit)
+      (throw (ex-info "git failed" {:args args :out out :err err})))
+    (clojure.string/trim out)))
+
+(defn- init-repo-with-pr-branch
+  "Sets up a bare `origin`, plus a clone on `main` with an uncommitted update to deps.edn,
+  and an existing PR branch on origin with a different version of deps.edn."
+  [root]
+  (let [origin (babashka.fs/path root "origin.git")
+        work (babashka.fs/path root "work")]
+    (git! root "init" "-q" "--bare" "-b" "main" (str origin))
+    (git! root "clone" "-q" (str origin) (str work))
+    (doseq [[k v] {"user.name" "test" "user.email" "test@example.com" "commit.gpgsign" "false"}]
+      (git! work "config" k v))
+    (git! work "switch" "-q" "-c" "main")
+    (spit (str (babashka.fs/path work "deps.edn")) "{:deps {foo/bar {:mvn/version \"1\"}}}\n")
+    (git! work "add" "deps.edn")
+    (git! work "commit" "-q" "-m" "base")
+    (git! work "push" "-q" "origin" "main")
+    (git! work "switch" "-q" "-c" "clojure-dependabot/deps-edn")
+    (spit (str (babashka.fs/path work "deps.edn")) "{:deps {foo/bar {:mvn/version \"2\"}}}\n")
+    (git! work "commit" "-q" "-am" "[bot] Updating dependencies in deps.edn")
+    (git! work "push" "-q" "origin" "clojure-dependabot/deps-edn")
+    (git! work "switch" "-q" "main")
+    (git! work "branch" "-q" "-D" "clojure-dependabot/deps-edn")
+    (spit (str (babashka.fs/path work "deps.edn")) "{:deps {foo/bar {:mvn/version \"3\"}}}\n")
+    {:origin origin :work work}))
+
+(defn- update-pr-with-stubbed-gh!
+  "Runs update-pr with real git but stubbed `gh`. `comments` are the PR's existing comment bodies.
+  Returns the `gh` calls made."
+  [work comments]
+  (let [real-sh @#'clojure-dependabot/sh
+        gh-calls (atom [])
+        opts {:file "deps.edn"
+              :branch "clojure-dependabot/deps-edn"
+              :body "body"
+              :github-ref "refs/heads/main"
+              :github-repository "owner/repo"
+              :github-workspace (str work)}]
+    (with-redefs [clojure-dependabot/sh (fn [& args]
+                                          (if (= "gh" (first args))
+                                            (do (swap! gh-calls conj (vec args))
+                                                {:out (json/generate-string [(map (fn [b] {:body b}) comments)])})
+                                            (apply real-sh args)))]
+      (#'clojure-dependabot/update-pr 7 opts))
+    @gh-calls))
+
+(deftest test-update-pr
+  (let [root (babashka.fs/create-temp-dir)
+        {:keys [origin work]} (init-repo-with-pr-branch root)
+        pr-head #(git! origin "rev-parse" "refs/heads/clojure-dependabot/deps-edn")]
+    (try
+      (testing "an existing PR branch is updated even though it has its own version of the file"
+        (let [gh-calls (update-pr-with-stubbed-gh! work [])]
+          (is (= "{:deps {foo/bar {:mvn/version \"3\"}}}"
+                 (git! origin "show" "clojure-dependabot/deps-edn:deps.edn")))
+          (is (= (git! origin "rev-parse" "main") (git! origin "rev-parse" "clojure-dependabot/deps-edn~1"))
+              "the PR branch is rebuilt on top of the base branch")
+          (is (= "main" (git! work "branch" "--show-current")) "the base branch is checked out afterwards")
+          (is (= "" (git! work "status" "--porcelain")) "the working tree is left clean")
+          (is (= [["gh" "pr" "edit" 7]] (map #(subvec % 0 4) gh-calls)) "the PR is edited by number")))
+
+      (testing "re-running with the same update does not push a new commit"
+        (let [head-before (pr-head)]
+          (spit (str (babashka.fs/path work "deps.edn")) "{:deps {foo/bar {:mvn/version \"3\"}}}\n")
+          (let [gh-calls (update-pr-with-stubbed-gh! work [])]
+            (is (= head-before (pr-head)))
+            (is (= [["gh" "pr" "edit" 7]] (map #(subvec % 0 4) gh-calls)) "the PR description is still refreshed"))))
+      (finally
+        (babashka.fs/delete-tree root)))))
+
+(deftest test-update-pr-skips-branches-with-other-commits
+  (let [root (babashka.fs/create-temp-dir)
+        {:keys [origin work]} (init-repo-with-pr-branch root)
+        marker @#'clojure-dependabot/skipped-pr-comment-marker
+        pr-head #(git! origin "rev-parse" "refs/heads/clojure-dependabot/deps-edn")
+        ;; someone else pushes a commit to the PR branch
+        human-head (let [other (babashka.fs/path root "other")]
+                     (git! root "clone" "-q" "-b" "clojure-dependabot/deps-edn" (str origin) (str other))
+                     (spit (str (babashka.fs/path other "deps.edn")) "{:deps {foo/bar {:mvn/version \"2\"}} :paths [\"src\"]}\n")
+                     (git! other "-c" "user.name=human" "-c" "user.email=human@example.com" "-c" "commit.gpgsign=false"
+                           "commit" "-q" "-am" "manual fix")
+                     (git! other "push" "-q" "origin" "clojure-dependabot/deps-edn")
+                     (git! other "rev-parse" "HEAD"))]
+    (try
+      (testing "the update is skipped and the PR is told why"
+        (let [gh-calls (update-pr-with-stubbed-gh! work [])]
+          (is (= human-head (pr-head)) "the other commit is not overwritten")
+          (is (= "main" (git! work "branch" "--show-current")))
+          (is (= "" (git! work "status" "--porcelain")) "the skipped update is discarded")
+          (is (= ["gh" "api" "repos/owner/repo/issues/7/comments"] (subvec (first gh-calls) 0 3)))
+          (is (= ["gh" "pr" "comment" 7 "--body"] (subvec (second gh-calls) 0 5)))
+          (is (str/starts-with? (nth (second gh-calls) 5) marker))
+          (is (= 2 (count gh-calls)) "the PR description is not edited")))
+
+      (testing "the comment is only posted the first time"
+        (spit (str (babashka.fs/path work "deps.edn")) "{:deps {foo/bar {:mvn/version \"3\"}}}\n")
+        (let [gh-calls (update-pr-with-stubbed-gh! work ["unrelated" (str marker "\nalready posted")])]
+          (is (= human-head (pr-head)))
+          (is (= [["gh" "api"]] (map #(subvec % 0 2) gh-calls)) "no new comment is posted")))
+      (finally
+        (babashka.fs/delete-tree root)))))
 
 (deftest test-ref->branch
   (let [ref->branch #'clojure-dependabot/ref->branch]
