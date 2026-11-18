@@ -655,7 +655,10 @@
   {:pre [(s/assert number? number)]}
 
   (log "Closing PR" number)
-  (sh "gh" "pr" "close" "--comment" "The most recent scan indicates that this PR is no longer needed." number)
+  (sh "gh" "pr" "close"
+      "--delete-branch"
+      "--comment" "The most recent scan indicates that this PR is no longer needed."
+      number)
   nil)
 
 (defn- file-changed-in-git?
