@@ -137,6 +137,21 @@
       (throw (ex-info "Process erred" (select-keys data [:out :err :cmd]))))
     data))
 
+(defn- git
+  "Runs git in `dir`, throwing if it fails."
+  [dir & args]
+  (apply sh {:dir dir} "git" args))
+
+(defn- git-ok?
+  "Runs git in `dir`, returning whether it succeeded."
+  [dir & args]
+  (-> (apply proc/sh {:dir dir} "git" args) :exit zero?))
+
+(defn- git-out
+  "Runs git in `dir`, returning its trimmed output (empty if it fails)."
+  [dir & args]
+  (-> (apply proc/sh {:dir dir} "git" args) :out str/trim))
+
 (defn- strict-parse-bool [x]
   (let [bool (parse-boolean x)]
     (if (some? bool)
@@ -564,39 +579,56 @@
 (defn- commit-message [file]
   (str "[bot] Updating dependencies in " file))
 
-(defn- open-pr
-  [{:keys [file branch body reviewers labels main-branch github-ref github-workspace]}]
-
-  (log "Opening a PR for" file)
-  ;; ensure we're starting on branch that triggered this workflow
-  (sh {:dir github-workspace} "git" "switch" (ref->branch github-ref))
-  (sh {:dir github-workspace} "git" "checkout" "-b" branch)
-  ;; TODO a nicer commit message with full details
-  (sh {:dir github-workspace} "git" "commit" file "-m" (commit-message file))
-  (sh {:dir github-workspace} "git" "push" "origin" branch)
-  (apply sh (concat ["gh" "pr" "create"
-                     "--base" main-branch
-                     "--title" (str "clojure-dependabot updates: " file)
-                     "--body" body]
-                    (if (and (some? reviewers) (not-empty reviewers))
-                      ["--reviewer" (str/join "," reviewers)]
-                      [])
-                    (if (and (some? labels) (not-empty labels))
-                      ["--label" (str/join "," labels)]
-                      [])))
-  (sh {:dir github-workspace} "git" "switch" (ref->branch github-ref))
-  nil)
-
 (def ^:private skipped-pr-comment-marker
   "Hidden marker identifying the comment posted when a PR update is skipped, so it's only posted once."
   "<!-- clojure-dependabot:skipped-update-new-commits -->")
 
 (defn- bot-commit?
   [github-workspace rev file]
-  (let [git-out (fn [& args] (-> (apply proc/sh {:dir github-workspace} "git" args) :out str/trim))
-        bot-email (git-out "config" "user.email")
-        author-email (git-out "log" "-1" "--format=%ae" rev)]
+  (let [bot-email (git-out github-workspace "config" "user.email")
+        author-email (git-out github-workspace "log" "-1" "--format=%ae" rev)]
     (= author-email bot-email)))
+
+(defn- warn
+  "Logs a message as a GitHub Actions warning annotation."
+  [& msg]
+  (log (str "::warning::" (str/join " " msg))))
+
+(defn- open-pr
+  [{:keys [file branch body reviewers labels main-branch github-ref github-workspace]}]
+
+  (log "Opening a PR for" file)
+  (let [base-branch (ref->branch github-ref)
+        ;; the branch can already exist without an open PR, e.g. when a previous PR was closed or
+        ;; merged without deleting its branch, or when `gh pr create` failed after the push
+        remote-branch? (git-ok? github-workspace "fetch" "origin" branch)]
+    (if (and remote-branch? (not (bot-commit? github-workspace "FETCH_HEAD" file)))
+      (do
+        (warn "Not opening a PR for" file "because branch" branch "already exists and has commits"
+              "not made by clojure-dependabot. Delete the branch to have a PR opened on the next run.")
+        ;; discard this run's update so it doesn't leak into the other projects' branches
+        (git github-workspace "restore" "--" file))
+      (do
+        ;; ensure we're starting on branch that triggered this workflow
+        (git github-workspace "switch" base-branch)
+        (git github-workspace "checkout" "-B" branch) ;; carries the uncommitted update over
+        ;; TODO a nicer commit message with full details
+        (git github-workspace "commit" file "-m" (commit-message file))
+        ;; only reached when the branch is new or its tip is the bot's own commit (checked above),
+        ;; so the force push never overwrites anyone else's commits
+        (git github-workspace "push" "--force" "origin" branch)
+        (apply sh (concat ["gh" "pr" "create"
+                           "--base" main-branch
+                           "--title" (str "clojure-dependabot updates: " file)
+                           "--body" body]
+                          (if (and (some? reviewers) (not-empty reviewers))
+                            ["--reviewer" (str/join "," reviewers)]
+                            [])
+                          (if (and (some? labels) (not-empty labels))
+                            ["--label" (str/join "," labels)]
+                            [])))
+        (git github-workspace "switch" base-branch))))
+  nil)
 
 (defn- pr-comment-bodies [github-repository number]
   (->> (sh "gh" "api" (str "repos/" github-repository "/issues/" number "/comments") "--paginate" "--slurp")
@@ -621,33 +653,31 @@
 
   (log "Updating PR" number)
 
-  (let [git (fn [& args] (apply sh {:dir github-workspace} "git" args))
-        git-ok? (fn [& args] (-> (apply proc/sh {:dir github-workspace} "git" args) :exit zero?))
-        base-branch (ref->branch github-ref)
+  (let [base-branch (ref->branch github-ref)
         ;; a failed fetch means there is no remote branch, so nothing that could be overwritten
-        remote-branch? (git-ok? "fetch" "origin" branch)]
+        remote-branch? (git-ok? github-workspace "fetch" "origin" branch)]
     (if (and remote-branch? (not (bot-commit? github-workspace "FETCH_HEAD" file)))
       (do
         (log "Skipping update of PR" number "because branch" branch "has commits not made by clojure-dependabot")
         ;; discard this run's update so it doesn't leak into the other projects' branches
-        (git "restore" "--" file)
+        (git github-workspace "restore" "--" file)
         (notify-pr-update-skipped number opts))
       (do
         ;; NOTE: the PR branch is rebuilt from the base branch rather than checked out, because the
         ;; uncommitted update to `file` conflicts with the PR branch's own version of it. This also
         ;; keeps the PR current with the base branch. It is only done when the branch tip is the
         ;; bot's own commit (checked above), so commits pushed by anyone else are never overwritten.
-        (git "switch" base-branch)
-        (git "checkout" "-B" branch) ;; carries the uncommitted update over
+        (git github-workspace "switch" base-branch)
+        (git github-workspace "checkout" "-B" branch) ;; carries the uncommitted update over
         ;; TODO a nicer commit message with full details
-        (git "commit" file "-m" (commit-message file))
-        (if (and remote-branch? (git-ok? "diff" "--quiet" "FETCH_HEAD" "HEAD"))
+        (git github-workspace "commit" file "-m" (commit-message file))
+        (if (and remote-branch? (git-ok? github-workspace "diff" "--quiet" "FETCH_HEAD" "HEAD"))
           (log "PR" number "branch is already up to date")
-          (git "push" "--force" "origin" branch))
+          (git github-workspace "push" "--force" "origin" branch))
         (sh "gh" "pr" "edit" number
             "--title" (str "clojure-dependabot updates: " file)
             "--body" body)
-        (git "switch" base-branch))))
+        (git github-workspace "switch" base-branch))))
   nil)
 
 (defn- close-pr

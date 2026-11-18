@@ -327,6 +327,65 @@
       (finally
         (babashka.fs/delete-tree root)))))
 
+(defn- open-pr-with-stubbed-gh!
+  "Runs open-pr with real git but stubbed `gh`. Returns the `gh` calls made and the output logged."
+  [work]
+  (let [real-sh @#'clojure-dependabot/sh
+        gh-calls (atom [])
+        opts {:file "deps.edn"
+              :branch "clojure-dependabot/deps-edn"
+              :body "body"
+              :main-branch "main"
+              :github-ref "refs/heads/main"
+              :github-repository "owner/repo"
+              :github-workspace (str work)}
+        out (with-out-str
+              (with-redefs [clojure-dependabot/sh (fn [& args]
+                                                    (if (= "gh" (first args))
+                                                      (do (swap! gh-calls conj (vec args)) {:out ""})
+                                                      (apply real-sh args)))]
+                (#'clojure-dependabot/open-pr opts)))]
+    {:gh-calls @gh-calls :out out}))
+
+(deftest test-open-pr-over-leftover-bot-branch
+  (testing "a leftover branch whose tip is the bot's commit (e.g. from a closed PR) is force-pushed over"
+    (let [root (babashka.fs/create-temp-dir)
+          {:keys [origin work]} (init-repo-with-pr-branch root)]
+      (try
+        (let [{:keys [gh-calls out]} (open-pr-with-stubbed-gh! work)]
+          (is (= "{:deps {foo/bar {:mvn/version \"3\"}}}"
+                 (git! origin "show" "clojure-dependabot/deps-edn:deps.edn")))
+          (is (= (git! origin "rev-parse" "main") (git! origin "rev-parse" "clojure-dependabot/deps-edn~1"))
+              "the branch is rebuilt on top of the base branch")
+          (is (= "main" (git! work "branch" "--show-current")))
+          (is (= "" (git! work "status" "--porcelain")))
+          (is (= [["gh" "pr" "create"]] (map #(subvec % 0 3) gh-calls)))
+          (is (not (str/includes? out "::warning::"))))
+        (finally
+          (babashka.fs/delete-tree root))))))
+
+(deftest test-open-pr-skips-leftover-branch-with-other-commits
+  (testing "a leftover branch with someone else's commit is not overwritten, and a warning is emitted"
+    (let [root (babashka.fs/create-temp-dir)
+          {:keys [origin work]} (init-repo-with-pr-branch root)
+          human-head (let [other (babashka.fs/path root "other")]
+                       (git! root "clone" "-q" "-b" "clojure-dependabot/deps-edn" (str origin) (str other))
+                       (spit (str (babashka.fs/path other "deps.edn")) "{:deps {foo/bar {:mvn/version \"2\"}} :paths [\"src\"]}\n")
+                       (git! other "-c" "user.name=human" "-c" "user.email=human@example.com" "-c" "commit.gpgsign=false"
+                             "commit" "-q" "-am" "manual fix")
+                       (git! other "push" "-q" "origin" "clojure-dependabot/deps-edn")
+                       (git! other "rev-parse" "HEAD"))]
+      (try
+        (let [{:keys [gh-calls out]} (open-pr-with-stubbed-gh! work)]
+          (is (= human-head (git! origin "rev-parse" "refs/heads/clojure-dependabot/deps-edn"))
+              "the other commit is not overwritten")
+          (is (= [] gh-calls) "no PR is opened")
+          (is (str/includes? out "::warning::Not opening a PR for deps.edn"))
+          (is (= "main" (git! work "branch" "--show-current")))
+          (is (= "" (git! work "status" "--porcelain")) "the skipped update is discarded"))
+        (finally
+          (babashka.fs/delete-tree root))))))
+
 (deftest test-ref->branch
   (let [ref->branch #'clojure-dependabot/ref->branch]
     (is (= "main" (ref->branch "refs/heads/main")))
