@@ -612,22 +612,25 @@
         ;; ensure we're starting on branch that triggered this workflow
         (git github-workspace "switch" base-branch)
         (git github-workspace "checkout" "-B" branch) ;; carries the uncommitted update over
-        ;; TODO a nicer commit message with full details
-        (git github-workspace "commit" file "-m" (commit-message file))
-        ;; only reached when the branch is new or its tip is the bot's own commit (checked above),
-        ;; so the force push never overwrites anyone else's commits
-        (git github-workspace "push" "--force" "origin" branch)
-        (apply sh (concat ["gh" "pr" "create"
-                           "--base" main-branch
-                           "--title" (str "clojure-dependabot updates: " file)
-                           "--body" body]
-                          (if (and (some? reviewers) (not-empty reviewers))
-                            ["--reviewer" (str/join "," reviewers)]
-                            [])
-                          (if (and (some? labels) (not-empty labels))
-                            ["--label" (str/join "," labels)]
-                            [])))
-        (git github-workspace "switch" base-branch))))
+        ;; always get back to the base branch, even if a step fails
+        (try
+          ;; TODO a nicer commit message with full details
+          (git github-workspace "commit" file "-m" (commit-message file))
+          ;; only reached when the branch is new or its tip is the bot's own commit (checked above),
+          ;; so the force push never overwrites anyone else's commits
+          (git github-workspace "push" "--force" "origin" branch)
+          (apply sh (concat ["gh" "pr" "create"
+                             "--base" main-branch
+                             "--title" (str "clojure-dependabot updates: " file)
+                             "--body" body]
+                            (if (and (some? reviewers) (not-empty reviewers))
+                              ["--reviewer" (str/join "," reviewers)]
+                              [])
+                            (if (and (some? labels) (not-empty labels))
+                              ["--label" (str/join "," labels)]
+                              [])))
+          (finally
+            (git github-workspace "switch" base-branch))))))
   nil)
 
 (defn- pr-comment-bodies [github-repository number]
@@ -669,15 +672,18 @@
         ;; bot's own commit (checked above), so commits pushed by anyone else are never overwritten.
         (git github-workspace "switch" base-branch)
         (git github-workspace "checkout" "-B" branch) ;; carries the uncommitted update over
-        ;; TODO a nicer commit message with full details
-        (git github-workspace "commit" file "-m" (commit-message file))
-        (if (and remote-branch? (git-ok? github-workspace "diff" "--quiet" "FETCH_HEAD" "HEAD"))
-          (log "PR" number "branch is already up to date")
-          (git github-workspace "push" "--force" "origin" branch))
-        (sh "gh" "pr" "edit" number
-            "--title" (str "clojure-dependabot updates: " file)
-            "--body" body)
-        (git github-workspace "switch" base-branch))))
+        ;; always get back to the base branch, even if a step fails
+        (try
+          ;; TODO a nicer commit message with full details
+          (git github-workspace "commit" file "-m" (commit-message file))
+          (if (and remote-branch? (git-ok? github-workspace "diff" "--quiet" "FETCH_HEAD" "HEAD"))
+            (log "PR" number "branch is already up to date")
+            (git github-workspace "push" "--force" "origin" branch))
+          (sh "gh" "pr" "edit" number
+              "--title" (str "clojure-dependabot updates: " file)
+              "--body" body)
+          (finally
+            (git github-workspace "switch" base-branch))))))
   nil)
 
 (defn- close-pr
@@ -751,15 +757,15 @@
 
 (defn- git-cleanup [{:keys [github-ref github-workspace directory]}]
   (log "Cleaning up")
-  (sh {:dir github-workspace}
-      "git" "restore" "--" (->> (cons github-workspace
-                                      (if (and (some? directory) (not-empty directory))
-                                          [directory]
-                                          []))
-                                (apply fs/file)
-                                str))
+  (git github-workspace
+       "restore" "--" (->> (cons github-workspace
+                                 (if (and (some? directory) (not-empty directory))
+                                     [directory]
+                                     []))
+                           (apply fs/file)
+                           str))
   ;; TODO delete all the generated pom.xmls ?
-  (sh {:dir github-workspace} "git" "checkout" (ref->branch github-ref)))
+  (git github-workspace "checkout" (ref->branch github-ref)))
 
 (defn main [& args]
   (when (or (some? args) (not-empty args))

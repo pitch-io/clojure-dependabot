@@ -386,6 +386,159 @@
         (finally
           (babashka.fs/delete-tree root))))))
 
+(def ^:private branch "clojure-dependabot/deps-edn")
+
+(def ^:private pr-opts
+  {:file "deps.edn"
+   :branch branch
+   :body "body"
+   :main-branch "main"
+   :github-ref "refs/heads/main"
+   :github-repository "owner/repo"
+   :github-workspace "/workspace"})
+
+(defn- with-stubbed-git
+  "Calls `f` with git, git-ok?, git-out and `gh` stubbed, and returns the git and gh calls made, in
+  order, plus everything logged.
+  - `remote-branch?`: whether fetching the PR branch succeeds, i.e. it exists on origin
+  - `tip-author`: email of the author of the remote branch's tip (the bot is bot@example.com)
+  - `up-to-date?`: whether the rebuilt branch is identical to the remote one
+  - `comments`: bodies of the PR's existing comments
+  - `gh-fails?`: whether `gh` calls throw (the exception is caught and recorded as a `[:threw msg]` call)"
+  [f & {:keys [remote-branch? tip-author up-to-date? comments gh-fails?]
+        :or {tip-author "bot@example.com"}}]
+  (let [calls (atom [])
+        out (with-out-str
+              (with-redefs [babashka.process/sh bail
+                            clojure-dependabot/git (fn [dir & args]
+                                                     (is (= "/workspace" dir))
+                                                     (swap! calls conj (into [:git] args))
+                                                     {:out ""})
+                            clojure-dependabot/git-ok? (fn [dir & args]
+                                                         (is (= "/workspace" dir))
+                                                         (swap! calls conj (into [:git-ok?] args))
+                                                         (case (first args)
+                                                           "fetch" (boolean remote-branch?)
+                                                           "diff" (boolean up-to-date?)))
+                            clojure-dependabot/git-out (fn [_dir & args]
+                                                         (case (first args)
+                                                           "config" "bot@example.com"
+                                                           "log" tip-author))
+                            clojure-dependabot/sh (fn [& args]
+                                                    (is (= "gh" (first args)) "all git calls go through the git helpers")
+                                                    (swap! calls conj (vec args))
+                                                    (when gh-fails?
+                                                      (throw (ex-info "gh failed" {})))
+                                                    {:out (json/generate-string [(map (fn [b] {:body b}) comments)])})]
+                (try
+                  (f)
+                  (catch clojure.lang.ExceptionInfo e
+                    (swap! calls conj [:threw (ex-message e)])))))]
+    {:calls @calls :out out}))
+
+(def ^:private rebuild-and-push
+  [[:git "switch" "main"]
+   [:git "checkout" "-B" branch]
+   [:git "commit" "deps.edn" "-m" "[bot] Updating dependencies in deps.edn"]
+   [:git "push" "--force" "origin" branch]])
+
+(def ^:private gh-pr-create
+  ["gh" "pr" "create" "--base" "main" "--title" "clojure-dependabot updates: deps.edn" "--body" "body"])
+
+(deftest test-open-pr-stubbed
+  (let [open-pr #(#'clojure-dependabot/open-pr (merge pr-opts %))]
+    (testing "a new branch is created, pushed and a PR opened"
+      (let [{:keys [calls out]} (with-stubbed-git #(open-pr {}) :remote-branch? false)]
+        (is (= (concat [[:git-ok? "fetch" "origin" branch]]
+                       rebuild-and-push
+                       [gh-pr-create
+                        [:git "switch" "main"]])
+               calls))
+        (is (not (str/includes? out "::warning::")))))
+
+    (testing "a leftover branch whose tip is the bot's commit is force-pushed over"
+      (let [{:keys [calls]} (with-stubbed-git #(open-pr {}) :remote-branch? true)]
+        (is (= (concat [[:git-ok? "fetch" "origin" branch]]
+                       rebuild-and-push
+                       [gh-pr-create
+                        [:git "switch" "main"]])
+               calls))))
+
+    (testing "a leftover branch with someone else's commit is left alone, with a warning"
+      (let [{:keys [calls out]} (with-stubbed-git #(open-pr {})
+                                  :remote-branch? true :tip-author "human@example.com")]
+        (is (= [[:git-ok? "fetch" "origin" branch]
+                [:git "restore" "--" "deps.edn"]]
+               calls)
+            "nothing is pushed, no PR is opened and the update is discarded")
+        (is (str/includes? out (str "::warning::Not opening a PR for deps.edn because branch " branch)))))
+
+    (testing "the base branch is checked out again when opening the PR fails"
+      (let [{:keys [calls]} (with-stubbed-git #(open-pr {}) :remote-branch? false :gh-fails? true)]
+        (is (= (concat [[:git-ok? "fetch" "origin" branch]]
+                       rebuild-and-push
+                       [gh-pr-create
+                        [:git "switch" "main"]
+                        [:threw "gh failed"]])
+               calls)
+            "the error is still thrown, after switching back")))
+
+    (testing "reviewers and labels are passed to gh pr create"
+      (let [{:keys [calls]} (with-stubbed-git #(open-pr {:reviewers ["alice" "bob"] :labels ["deps"]}))]
+        (is (some #{(into gh-pr-create ["--reviewer" "alice,bob" "--label" "deps"])} calls))))))
+
+(deftest test-update-pr-stubbed
+  (let [update-pr #(#'clojure-dependabot/update-pr 7 pr-opts)
+        gh-pr-edit ["gh" "pr" "edit" 7 "--title" "clojure-dependabot updates: deps.edn" "--body" "body"]
+        [switch checkout commit push] rebuild-and-push]
+    (testing "a branch whose tip is the bot's commit is rebuilt and force-pushed"
+      (let [{:keys [calls]} (with-stubbed-git update-pr :remote-branch? true)]
+        (is (= [[:git-ok? "fetch" "origin" branch]
+                switch checkout commit
+                [:git-ok? "diff" "--quiet" "FETCH_HEAD" "HEAD"]
+                push
+                gh-pr-edit
+                [:git "switch" "main"]]
+               calls))))
+
+    (testing "nothing is pushed when the branch is already up to date, but the PR is still edited"
+      (let [{:keys [calls]} (with-stubbed-git update-pr :remote-branch? true :up-to-date? true)]
+        (is (not (some #{push} calls)))
+        (is (some #{gh-pr-edit} calls))))
+
+    (testing "a missing remote branch is pushed without comparing against it"
+      (let [{:keys [calls]} (with-stubbed-git update-pr :remote-branch? false)]
+        (is (= [[:git-ok? "fetch" "origin" branch]
+                switch checkout commit push
+                gh-pr-edit
+                [:git "switch" "main"]]
+               calls))))
+
+    (testing "the base branch is checked out again when editing the PR fails"
+      (let [{:keys [calls]} (with-stubbed-git update-pr :remote-branch? true :gh-fails? true)]
+        (is (= [gh-pr-edit
+                [:git "switch" "main"]
+                [:threw "gh failed"]]
+               (take-last 3 calls))
+            "the error is still thrown, after switching back")))
+
+    (testing "a branch with someone else's commit is left alone and the PR is told why"
+      (let [marker @#'clojure-dependabot/skipped-pr-comment-marker
+            {:keys [calls]} (with-stubbed-git update-pr :remote-branch? true :tip-author "human@example.com")]
+        (is (= [[:git-ok? "fetch" "origin" branch]
+                [:git "restore" "--" "deps.edn"]
+                ["gh" "api" "repos/owner/repo/issues/7/comments" "--paginate" "--slurp"]]
+               (take 3 calls)))
+        (is (= ["gh" "pr" "comment" 7 "--body"] (subvec (nth calls 3) 0 5)))
+        (is (str/starts-with? (nth (nth calls 3) 5) marker))
+        (is (= 4 (count calls)) "nothing is pushed and the PR is not edited")
+
+        (testing "but only once"
+          (let [{:keys [calls]} (with-stubbed-git update-pr
+                                  :remote-branch? true :tip-author "human@example.com"
+                                  :comments [(str marker "\nalready posted")])]
+            (is (= 3 (count calls)) "no new comment is posted")))))))
+
 (deftest test-ref->branch
   (let [ref->branch #'clojure-dependabot/ref->branch]
     (is (= "main" (ref->branch "refs/heads/main")))
