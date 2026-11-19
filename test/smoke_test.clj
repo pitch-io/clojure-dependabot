@@ -364,4 +364,4 @@
                   clojure-dependabot/update-pr noop
                   clojure-dependabot/close-pr noop
                   clojure-dependabot/git-cleanup noop]
-      (main))))
+      (is (nil? (main))))))
