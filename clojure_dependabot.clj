@@ -41,7 +41,6 @@
 (s/def :github/identifier string?)
 
 (s/def :github/first-patched-version
-  ;; GitHub returns null when no patched version exists yet
   (s/nilable (s/keys {:req-un [:github/identifier]})))
 
 (s/def :github/ecosystem (s/and string? not-empty))
@@ -147,11 +146,6 @@
   [dir & args]
   (-> (apply proc/sh {:dir dir} "git" args) :exit zero?))
 
-(defn- git-out
-  "Runs git in `dir`, returning its trimmed output (empty if it fails)."
-  [dir & args]
-  (-> (apply proc/sh {:dir dir} "git" args) :out str/trim))
-
 (defn- strict-parse-bool [x]
   (let [bool (parse-boolean x)]
     (if (some? bool)
@@ -210,6 +204,7 @@
 (def custom-parsers
   {:directory (fn [val]
                 (->> val
+                     ;; TODO remove mid 2027
                      ;; for backwards compatibility with previous versions
                      (drop-while #(= % \/))
                      (str/join "")))
@@ -304,8 +299,8 @@
                        str)]
     (log "Scanning for" file-name "files in" scan-root)
     (->> (git-ls-files scan-root)
-         ;; filter for the correct file name
-         (filter (fn [path] (or (= path file-name) (str/ends-with? path (str "/" file-name)))))
+         (filter (fn [path] (or (= path file-name)
+                                (str/ends-with? path (str "/" file-name)))))
          (filter
            (if-not include-subdirectories
              (fn [path] (= (->> path (fs/path github-workspace) fs/parent str) scan-root))
@@ -579,14 +574,22 @@
 (defn- commit-message [file]
   (str "[bot] Updating dependencies in " file))
 
+(defn- pr-title [file]
+  (str "clojure-dependabot updates: " file))
+
+(defn- pr-branch
+  "The branch a project's PR is opened from.
+  NOTE: avoid changing the branch name, as existing PRs would no longer be found."
+  [project-path]
+  (str "clojure-dependabot/" (slugify project-path)))
+
 (def ^:private skipped-pr-comment-marker
-  "Hidden marker identifying the comment posted when a PR update is skipped, so it's only posted once."
   "<!-- clojure-dependabot:skipped-update-new-commits -->")
 
 (defn- bot-commit?
   [github-workspace rev file]
-  (let [bot-email (git-out github-workspace "config" "user.email")
-        author-email (git-out github-workspace "log" "-1" "--format=%ae" rev)]
+  (let [bot-email (-> (git github-workspace "config" "user.email") :out str/trim)
+        author-email (-> (git github-workspace "log" "-1" "--format=%ae" rev) :out str/trim)]
     (= author-email bot-email)))
 
 (defn- warn
@@ -594,41 +597,51 @@
   [& msg]
   (log (str "::warning::" (str/join " " msg))))
 
+(defn- branch-plan
+  "Decides what to do with a PR branch before pushing an update to it"
+  [{:keys [remote-branch? bot-tip?]}]
+  (cond
+    (not remote-branch?) :create
+    bot-tip? :overwrite
+    :else :skip))
+
+(defn- fetch-branch-plan
+  "Fetches the PR `branch` (leaving it in FETCH_HEAD) and decides what to do with it. See `branch-plan`."
+  [github-workspace branch file]
+  (let [remote-branch? (git-ok? github-workspace "fetch" "origin" branch)]
+    (branch-plan {:remote-branch? remote-branch?
+                  :bot-tip? (and remote-branch? (bot-commit? github-workspace "FETCH_HEAD" file))})))
+
+(defn- gh-pr-create-args
+  [{:keys [file body reviewers labels main-branch]}]
+  (concat ["gh" "pr" "create"
+           "--base" main-branch
+           "--title" (pr-title file)
+           "--body" body]
+          (when (seq reviewers)
+            ["--reviewer" (str/join "," reviewers)])
+          (when (seq labels)
+            ["--label" (str/join "," labels)])))
+
 (defn- open-pr
-  [{:keys [file branch body reviewers labels main-branch github-ref github-workspace]}]
+  [{:keys [file branch github-ref github-workspace] :as opts}]
 
   (log "Opening a PR for" file)
   (let [base-branch (ref->branch github-ref)
-        ;; the branch can already exist without an open PR, e.g. when a previous PR was closed or
-        ;; merged without deleting its branch, or when `gh pr create` failed after the push
-        remote-branch? (git-ok? github-workspace "fetch" "origin" branch)]
-    (if (and remote-branch? (not (bot-commit? github-workspace "FETCH_HEAD" file)))
+        plan (fetch-branch-plan github-workspace branch file)]
+    (if (= :skip plan)
       (do
         (warn "Not opening a PR for" file "because branch" branch "already exists and has commits"
               "not made by clojure-dependabot. Delete the branch to have a PR opened on the next run.")
-        ;; discard this run's update so it doesn't leak into the other projects' branches
         (git github-workspace "restore" "--" file))
       (do
-        ;; ensure we're starting on branch that triggered this workflow
         (git github-workspace "switch" base-branch)
-        (git github-workspace "checkout" "-B" branch) ;; carries the uncommitted update over
-        ;; always get back to the base branch, even if a step fails
+        (git github-workspace "checkout" "-B" branch)
         (try
           ;; TODO a nicer commit message with full details
           (git github-workspace "commit" file "-m" (commit-message file))
-          ;; only reached when the branch is new or its tip is the bot's own commit (checked above),
-          ;; so the force push never overwrites anyone else's commits
           (git github-workspace "push" "--force" "origin" branch)
-          (apply sh (concat ["gh" "pr" "create"
-                             "--base" main-branch
-                             "--title" (str "clojure-dependabot updates: " file)
-                             "--body" body]
-                            (if (and (some? reviewers) (not-empty reviewers))
-                              ["--reviewer" (str/join "," reviewers)]
-                              [])
-                            (if (and (some? labels) (not-empty labels))
-                              ["--label" (str/join "," labels)]
-                              [])))
+          (apply sh (gh-pr-create-args opts))
           (finally
             (git github-workspace "switch" base-branch))))))
   nil)
@@ -657,30 +670,23 @@
   (log "Updating PR" number)
 
   (let [base-branch (ref->branch github-ref)
-        ;; a failed fetch means there is no remote branch, so nothing that could be overwritten
-        remote-branch? (git-ok? github-workspace "fetch" "origin" branch)]
-    (if (and remote-branch? (not (bot-commit? github-workspace "FETCH_HEAD" file)))
+        plan (fetch-branch-plan github-workspace branch file)]
+    (if (= :skip plan)
       (do
         (log "Skipping update of PR" number "because branch" branch "has commits not made by clojure-dependabot")
-        ;; discard this run's update so it doesn't leak into the other projects' branches
         (git github-workspace "restore" "--" file)
         (notify-pr-update-skipped number opts))
       (do
-        ;; NOTE: the PR branch is rebuilt from the base branch rather than checked out, because the
-        ;; uncommitted update to `file` conflicts with the PR branch's own version of it. This also
-        ;; keeps the PR current with the base branch. It is only done when the branch tip is the
-        ;; bot's own commit (checked above), so commits pushed by anyone else are never overwritten.
         (git github-workspace "switch" base-branch)
-        (git github-workspace "checkout" "-B" branch) ;; carries the uncommitted update over
-        ;; always get back to the base branch, even if a step fails
+        (git github-workspace "checkout" "-B" branch)
         (try
           ;; TODO a nicer commit message with full details
           (git github-workspace "commit" file "-m" (commit-message file))
-          (if (and remote-branch? (git-ok? github-workspace "diff" "--quiet" "FETCH_HEAD" "HEAD"))
+          (if (and (= :overwrite plan) (git-ok? github-workspace "diff" "--quiet" "FETCH_HEAD" "HEAD"))
             (log "PR" number "branch is already up to date")
             (git github-workspace "push" "--force" "origin" branch))
           (sh "gh" "pr" "edit" number
-              "--title" (str "clojure-dependabot updates: " file)
+              "--title" (pr-title file)
               "--body" body)
           (finally
             (git github-workspace "switch" base-branch))))))
@@ -706,8 +712,41 @@
       not-empty
       boolean))
 
+(defn- antq-skip
+  "The project type antq should skip, so it only updates the given project file."
+  [full-path]
+  (if (= (fs/file-name full-path) "deps.edn")
+    "leiningen"
+    "clojure-cli"))
+
+(defn- antq-updates
+  "The updates to run with antq for `file`, as [package version] pairs (a nil version means the
+  latest). Security updates come first, once per vulnerable package, followed by the outdated
+  dependencies unless `security-updates-only`."
+  [file alerts outdated security-updates-only]
+  ;; TODO merge the security and outdated updates
+  ;; TODO see if we can opportunistically pull the security update's version from the outdated list
+  (concat
+    (->> alerts
+         (filter (fn [alert] (= (-> alert :dependency :manifest-path)
+                                (:project-path file))))
+         (map #(-> % :dependency :package :name gh-package->antq-name))
+         distinct
+         (map (fn [package] [package nil])))
+    (when-not security-updates-only
+      (->> (get outdated (:project-path file) [])
+           (map (juxt :name :latest-version))))))
+
+(defn- pr-action
+  [{:keys [open-pr? changed?]}]
+  (case [(boolean open-pr?) (boolean changed?)]
+    [false true] :open
+    [true true] :update
+    [true false] :close
+    [false false] :none))
+
 (defn- manage-prs
-  [alerts outdated files & {:keys [severity security-updates-only]
+  [alerts outdated files & {:keys [security-updates-only]
                             :as opts}]
 
   (log "Managing PRs")
@@ -717,43 +756,25 @@
     ;; NOTE: this *must* be sequential, not parallel because of using the `git` CLI
     (doseq [file files]
       ;; TODO check that target file is clean
-      (let [skip (if (= (fs/file-name (:full-path file)) "deps.edn")
-                     "leiningen"
-                     "clojure-cli")
+      (let [skip (antq-skip (:full-path file))
             project-dir (-> file :full-path fs/parent str)]
 
-        ;; TODO merge all the update calls from both sec and outdated
-        (doseq [package (->> alerts
-                             (filter (fn [alert] (= (-> alert :dependency :manifest-path)
-                                                    (:project-path file))))
-                             (map #(-> % :dependency :package :name gh-package->antq-name))
-                             distinct)]
-          ;; TODO see if we can opportunistically pull the version from the outdated list
+        (doseq [[package version] (antq-updates file alerts outdated security-updates-only)]
           ;; TODO do all the updates at once with multiple --focus calls
-          (antq-update project-dir package nil skip))
+          (antq-update project-dir package version skip))
 
-        (when-not security-updates-only
-          (doseq [od (get outdated (:project-path file) [])]
-            ;; TODO do all the updates at once with multiple --focus calls
-            (antq-update project-dir (:name od) (:latest-version od) skip)))
-
-        ;; NOTE: avoid changing the branch name as it will break the logic
-        (let [pr-branch (str "clojure-dependabot/" (slugify (:project-path file)))
-              existing-pr-number (get open-prs pr-branch nil)
-              changed? (-> file :full-path file-changed-in-git?)
-              pr-body-fn #(vuln-summary file alerts outdated)]
-          (case [(some? existing-pr-number) changed?]
-            [false true] (open-pr (merge {:file (:project-path file)
-                                          :branch pr-branch
-                                          :body (pr-body-fn)}
-                                         opts))
-            [true false] (close-pr existing-pr-number)
-            [true true] (update-pr existing-pr-number
-                                   (merge {:file (:project-path file)
-                                           :branch pr-branch
-                                           :body (pr-body-fn)}
-                                          opts))
-            [false false] (log "No updates for" (:project-path file) "- no PR needed")))))))
+        (let [branch (pr-branch (:project-path file))
+              existing-pr-number (get open-prs branch)
+              pr-opts #(merge {:file (:project-path file)
+                               :branch branch
+                               :body (vuln-summary file alerts outdated)}
+                              opts)]
+          (case (pr-action {:open-pr? (some? existing-pr-number)
+                            :changed? (-> file :full-path file-changed-in-git?)})
+            :open (open-pr (pr-opts))
+            :update (update-pr existing-pr-number (pr-opts))
+            :close (close-pr existing-pr-number)
+            :none (log "No updates for" (:project-path file) "- no PR needed")))))))
 
 (defn- git-cleanup [{:keys [github-ref github-workspace directory]}]
   (log "Cleaning up")
