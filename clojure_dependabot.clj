@@ -146,6 +146,22 @@
   [dir & args]
   (-> (apply proc/sh {:dir dir} "git" args) :exit zero?))
 
+(defn- gh
+  "Runs gh in `dir`, throwing if it fails. gh infers the repository from the git remote of
+  `dir`, so this must be the workspace, not the process's working directory."
+  [dir & args]
+  (apply sh {:dir dir} "gh" args))
+
+(defn- scan-root
+  "The absolute directory to scan: `directory` (relative to the workspace) within `github-workspace`."
+  [github-workspace directory]
+  (->> (cons github-workspace
+             (if (and (some? directory) (not-empty directory))
+               [directory]
+               []))
+       (apply fs/file)
+       str))
+
 (defn- strict-parse-bool [x]
   (let [bool (parse-boolean x)]
     (if (some? bool)
@@ -267,15 +283,16 @@
     ;; Unsafe decision to fix https://github.com/actions/runner/issues/2033
     (sh "git" "config" "--global" "--add" "safe.directory" github-workspace)))
 
-(defn- install-local-dependencies [{:keys [local-dependencies directory]
+(defn- install-local-dependencies [{:keys [local-dependencies directory github-workspace]
                                     :or {local-dependencies ""}}]
-  (let [parsed-deps (->> (str/split local-dependencies #",")
+  (let [dir (scan-root github-workspace directory)
+        parsed-deps (->> (str/split local-dependencies #",")
                          (filter not-empty)
                          (map #(str/split % #":")))]
     (doseq [[file group-id artifact-id version packaging] parsed-deps]
       (do
         (log "Using 'mvn' to install file: " file)
-        (sh {:dir directory}
+        (sh {:dir dir}
             "mvn" "-ntp" "install:install-file"
             (str "-Dfile=" file)
             (str "-DgroupId=" group-id)
@@ -291,12 +308,7 @@
 (defn- list-files
   [file-name & {:keys [github-workspace directory include-subdirectories]}]
 
-  (let [scan-root (->> (cons github-workspace
-                             (if (and (some? directory) (not-empty directory))
-                                 [directory]
-                                 []))
-                       (apply fs/file)
-                       str)]
+  (let [scan-root (scan-root github-workspace directory)]
     (log "Scanning for" file-name "files in" scan-root)
     (->> (git-ls-files scan-root)
          (filter (fn [path] (or (= path file-name)
@@ -567,8 +579,8 @@
           (str "--skip=" skip))
       :out))
 
-(defn- list-prs []
-  (-> (sh "gh" "pr" "list" "--state" "open" "--limit" "1000" "--json" "number,headRefName")
+(defn- list-prs [github-workspace]
+  (-> (gh github-workspace "pr" "list" "--state" "open" "--limit" "1000" "--json" "number,headRefName")
       :out))
 
 (defn- commit-message [file]
@@ -614,7 +626,7 @@
 
 (defn- gh-pr-create-args
   [{:keys [file body reviewers labels main-branch]}]
-  (concat ["gh" "pr" "create"
+  (concat ["pr" "create"
            "--base" main-branch
            "--title" (pr-title file)
            "--body" body]
@@ -641,23 +653,23 @@
           ;; TODO a nicer commit message with full details
           (git github-workspace "commit" file "-m" (commit-message file))
           (git github-workspace "push" "--force" "origin" branch)
-          (apply sh (gh-pr-create-args opts))
+          (apply gh github-workspace (gh-pr-create-args opts))
           (finally
             (git github-workspace "switch" base-branch))))))
   nil)
 
-(defn- pr-comment-bodies [github-repository number]
-  (->> (sh "gh" "api" (str "repos/" github-repository "/issues/" number "/comments") "--paginate" "--slurp")
+(defn- pr-comment-bodies [github-workspace github-repository number]
+  (->> (gh github-workspace "api" (str "repos/" github-repository "/issues/" number "/comments") "--paginate" "--slurp")
        :out
        json/parse-string
        (apply concat)
        (map #(get % "body" ""))))
 
 (defn- notify-pr-update-skipped
-  [number {:keys [branch github-repository]}]
-  (if (some #(str/includes? % skipped-pr-comment-marker) (pr-comment-bodies github-repository number))
+  [number {:keys [branch github-repository github-workspace]}]
+  (if (some #(str/includes? % skipped-pr-comment-marker) (pr-comment-bodies github-workspace github-repository number))
     (log "PR" number "has already been told that updates are skipped")
-    (sh "gh" "pr" "comment" number
+    (gh github-workspace "pr" "comment" number
         "--body" (str skipped-pr-comment-marker "\n"
                       "clojure-dependabot has stopped updating this PR because `" branch "` has commits "
                       "that weren't made by clojure-dependabot, and updating the branch would overwrite them.\n\n"
@@ -685,7 +697,7 @@
           (if (and (= :overwrite plan) (git-ok? github-workspace "diff" "--quiet" "FETCH_HEAD" "HEAD"))
             (log "PR" number "branch is already up to date")
             (git github-workspace "push" "--force" "origin" branch))
-          (sh "gh" "pr" "edit" number
+          (gh github-workspace "pr" "edit" number
               "--title" (pr-title file)
               "--body" body)
           (finally
@@ -693,11 +705,11 @@
   nil)
 
 (defn- close-pr
-  [number]
+  [number {:keys [github-workspace]}]
   {:pre [(s/assert number? number)]}
 
   (log "Closing PR" number)
-  (sh "gh" "pr" "close"
+  (gh github-workspace "pr" "close"
       "--delete-branch"
       "--comment" "The most recent scan indicates that this PR is no longer needed."
       number)
@@ -746,11 +758,11 @@
     [false false] :none))
 
 (defn- manage-prs
-  [alerts outdated files & {:keys [security-updates-only]
+  [alerts outdated files & {:keys [security-updates-only github-workspace]
                             :as opts}]
 
   (log "Managing PRs")
-  (let [open-prs (->> (-> (list-prs) (json/parse-string csk/->kebab-case-keyword))
+  (let [open-prs (->> (-> (list-prs github-workspace) (json/parse-string csk/->kebab-case-keyword))
                       (map (juxt :head-ref-name :number))
                       (into {}))]
     ;; NOTE: this *must* be sequential, not parallel because of using the `git` CLI
@@ -773,18 +785,13 @@
                             :changed? (-> file :full-path file-changed-in-git?)})
             :open (open-pr (pr-opts))
             :update (update-pr existing-pr-number (pr-opts))
-            :close (close-pr existing-pr-number)
+            :close (close-pr existing-pr-number opts)
             :none (log "No updates for" (:project-path file) "- no PR needed")))))))
 
 (defn- git-cleanup [{:keys [github-ref github-workspace directory]}]
   (log "Cleaning up")
   (git github-workspace
-       "restore" "--" (->> (cons github-workspace
-                                 (if (and (some? directory) (not-empty directory))
-                                     [directory]
-                                     []))
-                           (apply fs/file)
-                           str))
+       "restore" "--" (scan-root github-workspace directory))
   ;; TODO delete all the generated pom.xmls ?
   (git github-workspace "checkout" (ref->branch github-ref)))
 
