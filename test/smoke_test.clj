@@ -231,7 +231,7 @@
 (deftest test-gh-pr-create-args
   (let [gh-pr-create-args #'clojure-dependabot/gh-pr-create-args
         opts {:file "deps.edn" :body "body" :main-branch "main"}
-        base ["gh" "pr" "create" "--base" "main" "--title" (pr-title "deps.edn") "--body" "body"]]
+        base ["pr" "create" "--base" "main" "--title" (pr-title "deps.edn") "--body" "body"]]
     (is (= base (gh-pr-create-args opts)))
     (is (= base (gh-pr-create-args (assoc opts :reviewers [] :labels []))) "empty lists are left out")
     (is (= (into base ["--reviewer" "alice,bob" "--label" "deps,security"])
@@ -253,7 +253,7 @@
                       clojure-dependabot/vuln-summary (constantly "body")
                       clojure-dependabot/file-changed-in-git? #(= % (:full-path many-alerts))
                       clojure-dependabot/open-pr (fn [{:keys [file]}] (swap! calls conj [:open file]))
-                      clojure-dependabot/close-pr (fn [number] (swap! calls conj [:close number]))]
+                      clojure-dependabot/close-pr (fn [number _opts] (swap! calls conj [:close number]))]
           (#'clojure-dependabot/manage-prs alerts {} [many-alerts no-alerts] {:security-updates-only true}))
         (is (= [[:open "a/deps.edn"] [:close 7]] @calls))))))
 
@@ -330,12 +330,12 @@
   (let [real-sh @#'clojure-dependabot/sh
         gh-calls (atom [])
         out (with-out-str
-              (with-redefs [clojure-dependabot/sh (fn [& args]
+              (with-redefs [clojure-dependabot/gh (fn [dir & args]
+                                                    (is (= (str work) dir) "gh runs in the workspace")
+                                                    (swap! gh-calls conj (into ["gh"] args))
+                                                    {:out (json/generate-string [(map (fn [b] {:body b}) comments)])})
+                            clojure-dependabot/sh (fn [& args]
                                                     (cond
-                                                      (= "gh" (first args))
-                                                      (do (swap! gh-calls conj (vec args))
-                                                          {:out (json/generate-string [(map (fn [b] {:body b}) comments)])})
-
                                                       (and (map? (first args)) (= "git" (second args)))
                                                       (apply real-sh (with-fake-git-date (first args)) (rest args))
 
@@ -468,9 +468,9 @@
                                                          (case (first args)
                                                            "fetch" (boolean remote-branch?)
                                                            "diff" false))
-                            clojure-dependabot/sh (fn [& args]
-                                                    (is (= "gh" (first args)) "all git calls go through the git helpers")
-                                                    (swap! calls conj (vec args))
+                            clojure-dependabot/gh (fn [dir & args]
+                                                    (is (= "/workspace" dir) "gh runs in the workspace")
+                                                    (swap! calls conj (into ["gh"] args))
                                                     (when gh-fails?
                                                       (throw (ex-info "gh failed" {})))
                                                     {:out ""})]
@@ -561,3 +561,20 @@
                   clojure-dependabot/close-pr noop
                   clojure-dependabot/git-cleanup noop]
       (is (nil? (main))))))
+
+(deftest test-install-local-dependencies
+  (testing "local JARs are installed from the scan root within the workspace, not the process's working directory"
+    (doseq [[directory expected-dir] [[nil "/workspace"]
+                                      ["sub" "/workspace/sub"]]]
+      (let [calls (atom [])]
+        (with-redefs [babashka.process/sh bail
+                      clojure-dependabot/sh (fn [opts & args] (swap! calls conj [(:dir opts) (vec args)]))]
+          (#'clojure-dependabot/install-local-dependencies
+            {:github-workspace "/workspace"
+             :directory directory
+             :local-dependencies "libs/foo.jar:com.example:foo:1.0.0:jar"}))
+        (is (= [[expected-dir ["mvn" "-ntp" "install:install-file"
+                               "-Dfile=libs/foo.jar" "-DgroupId=com.example" "-DartifactId=foo"
+                               "-Dversion=1.0.0" "-Dpackaging=jar"]]]
+               @calls)
+            (str "directory: " (pr-str directory)))))))
