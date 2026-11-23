@@ -481,6 +481,8 @@
 (defn- vuln-summaries
   [alerts outdated scannable-files & {:keys [github-step-summary]}]
 
+  (throw (ex-info "step summary" {:x github-step-summary}))
+
   ;; TODO parallel ?
   (doseq [file scannable-files]
     (do

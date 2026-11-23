@@ -1,6 +1,11 @@
 #kaocha/v1
 {:tests [{:id :unit
           :test-paths ["test"]
-          :ns-patterns ["-test$"]}]
+          :ns-patterns ["-test$"]
+          :skip-meta [:e2e]}
+         {:id :e2e
+          :test-paths ["test"]
+          :ns-patterns ["-test$"]
+          :focus-meta [:e2e]}]
  :color? #profile {:ci false
                    :default true}}
