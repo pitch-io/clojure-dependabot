@@ -25,4 +25,4 @@ jobs:
       - name: Docker build
         run: "docker build -t pitch-io/clojure-dependabot:latest ."
       - name: Test
-        run: 'docker run --rm -t -v "$PWD:/src" -w /src pitch-io/clojure-dependabot bb test:bb --profile ci'
+        run: 'docker run --rm -t -v "$PWD:/src" -w /src pitch-io/clojure-dependabot bb test:bb unit --profile ci'

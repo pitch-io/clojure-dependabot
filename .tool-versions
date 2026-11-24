@@ -1,3 +1,4 @@
 babashka 1.12.209
 clojure 1.12.7.1681
+java openjdk-25.0.2
 lein 2.13.1
