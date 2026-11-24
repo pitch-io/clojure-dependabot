@@ -54,6 +54,13 @@ See [`action.yml`](./action.yml) for more details on each option.
 
 This project is configured to use [`asdf`](https://asdf-vm.com/) to manage its environment.
 
+```sh
+asdf plugin add clojure https://github.com/asdf-community/asdf-clojure.git
+asdf plugin add babashka https://github.com/pitch-io/asdf-babashka.git
+asdf plugin add lein https://github.com/miorimmax/asdf-lein.git
+asdf install
+```
+
 You can run the code in the production Docker container with `./scripts/docker.sh` or locally with `./scripts/local.sh`.
 You will need to set environment variables for these scripts to run.
 You can look at the source code, or run them and they will raise errors and tell you what variables to set.
