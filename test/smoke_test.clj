@@ -6,7 +6,7 @@
     [clojure.java.io :as io]
     [clojure.string :as str]
     [clojure.test :refer [deftest is testing]]
-    [clojure-dependabot :refer [main flatten-mvn-tree list-outdated severities-above keys-eq-not-nil antq-dependency-matches
+    [clojure-dependabot :refer [main list-outdated severities-above keys-eq-not-nil antq-dependency-matches
                                 antq-dependency-should-keep antq-dependency-matches parse-ignore-dependencies slugify]]))
 
 (defn- bail [& args]
@@ -74,14 +74,6 @@
   (is (= (severities-above "critical") (seq ["critical"])))
   (is (= (severities-above "high") (seq ["critical" "high"])))
   (is (= (severities-above nil) (seq ["critical" "high" "medium" "low"]))))
-
-(deftest test-flatten-mvn-tree
-  (let [input (json-resource "maven-dependencies.json")
-        expected (set ["parent" "child-1" "child-2" "child-1-1" "child-1-2" "child-1-1-1"])]
-    (testing "MVN dependency trees can be flattened"
-      (let [result (flatten-mvn-tree input)]
-        (is (= expected
-               (set (map :artifact-id result))))))))
 
 (deftest test-slugify
   (is (= (slugify "test") "test"))
@@ -210,6 +202,18 @@
 
     (testing "nothing to update"
       (is (empty? (antq-updates file [] {} false))))))
+
+(deftest test-alert-for-project?
+  (let [alert-for-project? #'clojure-dependabot/alert-for-project?
+        alert (fn [manifest-path] {:dependency {:manifest-path manifest-path}})
+        project (fn [project-path] {:project-path project-path})]
+    (testing "alerts are reported against the project file submitted as the manifest"
+      (is (alert-for-project? (project "foo/deps.edn") (alert "foo/deps.edn")))
+      (is (alert-for-project? (project "deps.edn") (alert "deps.edn")) "a project at the repository root"))
+    (testing "alerts for other projects are not matched"
+      (is (not (alert-for-project? (project "foo/deps.edn") (alert "foo/project.clj"))) "the other project in the same directory")
+      (is (not (alert-for-project? (project "foo/deps.edn") (alert "foo/pom.xml"))) "the generated pom.xml")
+      (is (not (alert-for-project? (project "deps.edn") (alert "foo/deps.edn")))))))
 
 (deftest test-pr-action
   (let [pr-action #'clojure-dependabot/pr-action]
@@ -542,26 +546,6 @@
                     (into #{}))
                #{1 2}))))))
 
-(deftest the-whole-shebang
-  (testing "the whole thing works when (most) I/O is mocked away"
-    (with-redefs [babashka.process/sh bail
-                  clojure-dependabot/parse-opts (constantly default-opts)
-                  clojure-dependabot/configure-git noop
-                  clojure-dependabot/git-ls-files mock-git-ls-files
-                  clojure-dependabot/outdated-cmd mock-outdated-cmd
-                  clojure-dependabot/gh-api-dependabot-alerts mock-gh-api-dependabot-alerts
-                  clojure-dependabot/mvn-scan noop
-                  clojure-dependabot/mvn-tree-txt mock-mvn-tree-txt
-                  clojure-dependabot/mvn-tree-json mock-mvn-tree-json
-                  clojure-dependabot/antq-update noop
-                  clojure-dependabot/file-changed-in-git? (constantly true)
-                  clojure-dependabot/list-prs noop
-                  clojure-dependabot/open-pr noop
-                  clojure-dependabot/update-pr noop
-                  clojure-dependabot/close-pr noop
-                  clojure-dependabot/git-cleanup noop]
-      (is (nil? (main))))))
-
 (deftest test-install-local-dependencies
   (testing "local JARs are installed from the scan root within the workspace, not the process's working directory"
     (doseq [[directory expected-dir] [[nil "/workspace"]
@@ -578,3 +562,113 @@
                                "-Dversion=1.0.0" "-Dpackaging=jar"]]]
                @calls)
             (str "directory: " (pr-str directory)))))))
+
+(deftest test-maven-package-url
+  (let [maven-package-url #'clojure-dependabot/maven-package-url
+        dep {:group-id "com.example" :artifact-id "foo" :version "1.0.0" :type "jar" :classifier ""}]
+    (is (= "pkg:maven/com.example/foo@1.0.0?type=jar" (maven-package-url dep)))
+    (is (= "pkg:maven/com.example/foo@1.0.0?classifier=sources&type=jar"
+           (maven-package-url (assoc dep :classifier "sources")))
+        "qualifiers are sorted, as package URLs require")
+    (is (= "pkg:maven/com.example/foo@1.0.0" (maven-package-url (dissoc dep :type :classifier))))))
+
+(deftest test-snapshot-resolved
+  (let [snapshot-resolved #'clojure-dependabot/snapshot-resolved
+        purl #(str "pkg:maven/" % "/" % "@0.1.0?type=jar")
+        entry (fn [id relationship & children]
+                [(purl id) {:package_url (purl id)
+                            :relationship relationship
+                            :scope "runtime"
+                            :dependencies (mapv purl children)}])]
+    (testing "the project itself is left out, its children are direct, and the rest indirect"
+      (is (= (into {} [(entry "child-1" "direct" "child-1-1" "child-1-2")
+                       (entry "child-1-1" "indirect" "child-1-1-1")
+                       (entry "child-1-1-1" "indirect")
+                       (entry "child-1-2" "indirect")
+                       (entry "child-2" "direct")])
+             (snapshot-resolved (json-resource "maven-dependencies.json")))))
+
+    (testing "a package reached through several paths is merged, preferring direct and runtime"
+      (let [dep (fn [id scope & children]
+                  (cond-> {:group-id id :artifact-id id :version "0.1.0" :type "jar" :scope scope}
+                    children (assoc :children (vec children))))
+            tree {:group-id "project" :artifact-id "project" :version "0.1.0"
+                  :children [(dep "a" "compile" (dep "shared" "test" (dep "x" "test")))
+                             (dep "shared" "compile" (dep "y" "compile"))]}
+            shared (get (snapshot-resolved tree) (purl "shared"))]
+        (is (= "direct" (:relationship shared)))
+        (is (= "runtime" (:scope shared)))
+        (is (= [(purl "x") (purl "y")] (:dependencies shared)))))
+
+    (testing "test dependencies are development dependencies"
+      (is (= "development"
+             (-> (snapshot-resolved {:children [{:group-id "t" :artifact-id "t" :version "0.1.0" :type "jar" :scope "test"}]})
+                 (get (purl "t"))
+                 :scope))))))
+
+(deftest test-mvn-scan
+  (testing "each project's snapshot names the project file as its manifest, not the generated pom.xml"
+    (let [submitted (atom [])
+          calls (atom [])
+          files [{:full-path "/ws/clj/deps.edn" :project-path "clj/deps.edn"}
+                 {:full-path "/ws/lein/project.clj" :project-path "lein/project.clj"}]
+          opts {:github-repository "owner/repo"
+                :github-token "token"
+                :github-ref "refs/heads/main"
+                :github-sha "abc123"
+                :github-run-id "42"}]
+      (with-redefs [babashka.process/sh bail
+                    clojure-dependabot/sh (fn [opts & args]
+                                            (swap! calls conj [(:dir opts) (vec args)])
+                                            (when (= "gh" (first args))
+                                              (is (= {"GH_TOKEN" "token"} (:extra-env opts)))
+                                              (swap! submitted conj (json/parse-string (:in opts))))
+                                            {:out ""})
+                    clojure-dependabot/mvn-tree (fn [dir]
+                                                  {:text ""
+                                                   :json {:group-id "p" :artifact-id "p" :version "1"
+                                                          :children [{:group-id "g" :artifact-id (str (fs/file-name dir)) :version "1" :type "jar" :scope "compile"}]}})]
+        (let [scanned (atom nil)]
+          (with-out-str (reset! scanned (#'clojure-dependabot/mvn-scan files opts)))
+          (is (= [["clj/deps.edn" "clj"] ["lein/project.clj" "lein"]]
+                 (map (juxt :project-path #(-> % :dep-tree :json :children first :artifact-id)) @scanned))
+              "each project is returned with its own dependency tree, for the summaries")))
+      (is (= [["/ws/clj" ["clojure" "-X:deps" "mvn-pom"]]
+              [nil ["gh" "api" "--method" "POST" "-H" "Accept: application/vnd.github+json"
+                    "/repos/owner/repo/dependency-graph/snapshots" "--input" "-"]]
+              ["/ws/lein" ["lein" "pom"]]
+              [nil ["gh" "api" "--method" "POST" "-H" "Accept: application/vnd.github+json"
+                    "/repos/owner/repo/dependency-graph/snapshots" "--input" "-"]]]
+             @calls))
+      (is (= [["clj/deps.edn"] ["lein/project.clj"]] (map #(keys (get % "manifests")) @submitted)))
+      (is (= [{"source_location" "clj/deps.edn"} {"source_location" "lein/project.clj"}]
+             (map #(get-in % ["manifests" (ffirst (get % "manifests")) "file"]) @submitted)))
+      (is (= [["pkg:maven/g/clj@1?type=jar"] ["pkg:maven/g/lein@1?type=jar"]]
+             (map #(-> % (get "manifests") first val (get "resolved") keys) @submitted))
+          "each project's dependency tree is built from its own directory")
+      (is (= [{"correlator" "clj/deps.edn" "id" "42"} {"correlator" "lein/project.clj" "id" "42"}]
+             (map #(get % "job") @submitted))
+          "each project replaces its own previous snapshot")
+      (is (every? #(and (= "abc123" (get % "sha")) (= "refs/heads/main" (get % "ref"))) @submitted)))))
+
+(deftest test-mvn-scan-deletes-pom
+  (with-temp-dir [workspace]
+    (let [pom (fs/path workspace "pom.xml")
+          file {:full-path (str (fs/path workspace "deps.edn")) :project-path "deps.edn"}
+          scan! (fn [submit]
+                  (with-redefs [babashka.process/sh bail
+                                clojure-dependabot/sh (fn [_opts & args]
+                                                        (when (= ["clojure" "-X:deps" "mvn-pom"] args)
+                                                          (spit (str pom) "<project/>"))
+                                                        {:out ""})
+                                clojure-dependabot/mvn-tree (fn [_dir]
+                                                              (is (fs/exists? pom) "the tree is built from the generated pom.xml")
+                                                              {:text "" :json {}})
+                                clojure-dependabot/submit-snapshot submit]
+                    (with-out-str (#'clojure-dependabot/mvn-scan [file] {}))))]
+      (testing "the generated pom.xml is deleted after the snapshot is submitted"
+        (scan! noop)
+        (is (not (fs/exists? pom))))
+      (testing "the generated pom.xml is deleted even when submitting fails"
+        (is (thrown? Exception (scan! (fn [& _] (throw (ex-info "submit failed" {}))))))
+        (is (not (fs/exists? pom)))))))

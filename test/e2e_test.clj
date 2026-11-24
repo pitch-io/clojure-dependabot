@@ -6,6 +6,7 @@
     [babashka.process :as proc]
     [clj-yaml.core :as yaml]
     [clojure.data.xml :as xml]
+    [clojure.java.io :as io]
     [clojure.string :as str]
     [clojure.test :refer [deftest is testing]]))
 
@@ -14,6 +15,24 @@
 
 (def ^:private test-repo
   (fs/normalize (fs/path project-root ".." "clojure-dependabot-test")))
+
+(def ^:private asdf-shims
+  (fs/path (or (System/getenv "ASDF_DATA_DIR") (fs/path (fs/home) ".asdf")) "shims"))
+
+(defn- asdf-env
+  "The environment that puts the asdf shims first on the PATH, and pins each tool to its version in
+  this repository's .tool-versions (e.g. `ASDF_LEIN_VERSION`), unless that variable is already set.
+  asdf otherwise picks versions from the .tool-versions of the directory a command runs in, but the
+  tools run in the test repository."
+  []
+  (->> (str/split-lines (slurp (str (fs/path project-root ".tool-versions"))))
+       (map str/trim)
+       (remove #(or (str/blank? %) (str/starts-with? % "#")))
+       (map (fn [line]
+              (let [[tool version] (str/split line #"\s+")
+                    version-var (str "ASDF_" (-> tool str/upper-case (str/replace "-" "_")) "_VERSION")]
+                [version-var (or (System/getenv version-var) version)])))
+       (into {"PATH" (str asdf-shims fs/path-separator (System/getenv "PATH"))})))
 
 (defn- cmd!
   "Runs a command in `dir` and returns its trimmed stdout, throwing if it fails."
@@ -51,6 +70,15 @@
        (filter #(#{"deps.edn" "project.clj"} (fs/file-name %)))
        set))
 
+(defn- relay
+  "Copies `stream` line by line to `writer` on another thread. Through `*out*` or `*err*`, Kaocha
+  captures the lines and prints them only when the test fails (or live with `--no-capture-output`)."
+  [stream writer]
+  (future
+    (binding [*out* writer]
+      (doseq [line (line-seq (io/reader stream))]
+        (println line)))))
+
 (defn- elements [node]
   (filter xml/element? (:content node)))
 
@@ -84,22 +112,29 @@
 
 (deftest ^:e2e test-end-to-end
   (is (fs/directory? test-repo) (str "The test repository must be checked out at " test-repo))
+  (is (fs/directory? asdf-shims) (str "asdf must be installed, with its shims at " asdf-shims))
   (let [step-summary (str (fs/create-temp-file {:prefix "clojure-dependabot-step-summary-" :suffix ".html"}))]
-    (println step-summary)
     (try
       (let [env (merge (action-inputs)
                        {;; don't push branches or open PRs in the test repository
                         "INPUT_AUTO_PULL_REQUEST" "false"
                         ;; don't change the global git config of whoever runs the tests
                         "LOCAL_DEV" "1"}
-                       (github-env test-repo step-summary))
+                       (github-env test-repo step-summary)
+                       (asdf-env))
             ;; run from the workspace, like GitHub Actions does
-            {:keys [exit]} @(proc/process {:dir (str test-repo)
-                                           :extra-env env
-                                           :out :inherit
-                                           :err :inherit}
-                                          "bb" "--config" (str (fs/path project-root "bb.edn"))
-                                          (str (fs/path project-root "clojure_dependabot.clj")))]
+            proc (proc/process {:dir (str test-repo)
+                                :extra-env env
+                                :out :stream
+                                :err :stream}
+                               (str (fs/path asdf-shims "bb")) "--config" (str (fs/path project-root "bb.edn"))
+                               (str (fs/path project-root "clojure_dependabot.clj")))
+            ;; each stream needs its own thread, or the process blocks once the other's pipe fills
+            out (relay (:out proc) *out*)
+            err (relay (:err proc) *err*)
+            ;; wait for both relays, so no output is missing from a failure report
+            _ [@out @err]
+            {:keys [exit]} @proc]
         (is (zero? exit) "clojure-dependabot exits successfully")
 
         (let [slurped-summary (slurp step-summary)

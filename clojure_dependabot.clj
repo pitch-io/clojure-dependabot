@@ -253,6 +253,7 @@
   (let [gh-vars ["GITHUB_PAT"
                  "GITHUB_REF"
                  "GITHUB_REPOSITORY"
+                 "GITHUB_RUN_ID"
                  "GITHUB_SHA"
                  "GITHUB_STEP_SUMMARY"
                  "GITHUB_TOKEN"
@@ -322,31 +323,6 @@
                 {:full-path (str (fs/path github-workspace path))
                  :project-path path})))))
 
-(defn- mvn-scan [files & {:keys [github-token github-repository github-ref github-sha]}]
-  ;; TODO parallel ?
-  (doseq [{:keys [full-path project-path]} files]
-    (let [file-name (fs/file-name project-path)
-          pom-gen (if (= file-name "deps.edn")
-                    #(sh {:dir %} "clojure" "-X:deps" "mvn-pom")
-                    #(sh {:dir %} "lein" "pom"))]
-      (log "Generating pom.xml for" project-path)
-      (pom-gen (-> full-path fs/parent str))
-      (log "Submitting to Dependabot API for" project-path)
-      (retry 2
-        (sh "maven-dependency-submission-linux"
-            "--token" github-token
-            "--repository" github-repository
-            "--branch-ref" github-ref
-            "--sha" github-sha
-            "--directory" (fs/parent full-path)
-            ;; TODO this option appears to do nothing, but leaving it for now because it *seems* like what we want
-            ;; https://github.com/advanced-security/maven-dependency-submission-action/issues/122
-            "--snapshot-exclude-file-name"
-            "--detector-name" "clojure-dependabot"
-            "--detector-url" homepage
-            "--detector-version" version
-            "--job-name" project-path)))))
-
 (defn gh-api-dependabot-alerts
   [{:keys [github-repository github-pat severity]}]
 
@@ -399,38 +375,119 @@
    :post [(s/assert :maven/tree %)]}
 
   (log "Building Maven dependency tree for:" dir)
-  (let [temp-file (mk-temp-file "clojure-dependabot-mvn-tree-" ".json")]
+  (let [temp-file (mk-temp-file "clojure-dependabot-mvn-tree-" ".txt")]
     {:text (mvn-tree-txt dir temp-file)
      :json (-> (mvn-tree-json dir temp-file)
                (json/parse-string csk/->kebab-case-keyword))}))
 
-(defn flatten-mvn-tree* [deps level]
-  (reduce (fn [acc dep]
-            (concat acc
-                    [(-> dep
-                         (dissoc :children)
-                         (assoc :level level))]
-                    (if (:children dep)
-                      (flatten-mvn-tree* (:children dep) (inc level))
-                      [])))
-          []
-          deps))
+(defn- maven-package-url
+  "The package URL (purl) of a dependency from the `mvn dependency:tree` JSON, in the same form
+  maven-dependency-submission used: `pkg:maven/<group>/<artifact>@<version>?classifier=<c>&type=<t>`."
+  [{:keys [group-id artifact-id version classifier type]}]
+  (let [qualifiers (->> [["classifier" classifier] ["type" type]]
+                        (filter (comp not-empty second))
+                        (map (fn [[k v]] (str k "=" v))))]
+    (str "pkg:maven/" group-id "/" artifact-id "@" version
+         (when (seq qualifiers)
+           (str "?" (str/join "&" qualifiers))))))
 
-(defn- flatten-mvn-tree [data]
-  (flatten-mvn-tree* [data] 1))
+(defn- merge-resolved-dependency
+  "Merges two entries for the same package, which can be reached through several paths."
+  [a b]
+  {:package_url (:package_url a)
+   :relationship (if (some #{"direct"} [(:relationship a) (:relationship b)]) "direct" "indirect")
+   :scope (if (some #{"runtime"} [(:scope a) (:scope b)]) "runtime" "development")
+   :dependencies (vec (distinct (concat (:dependencies a) (:dependencies b))))})
 
-(defn- vuln-summary [file alerts outdated]
+(defn- snapshot-resolved
+  "The `resolved` dependencies of a snapshot manifest, from the root of the `mvn dependency:tree`
+  JSON. The root is the project itself, so it is left out, and its children are the direct dependencies."
+  [root]
+  (letfn [(walk [deps relationship]
+            (mapcat (fn [dep]
+                      (let [purl (maven-package-url dep)]
+                        (cons [purl {:package_url purl
+                                     :relationship relationship
+                                     ;; the API only has these two scopes
+                                     :scope (if (= "test" (:scope dep)) "development" "runtime")
+                                     :dependencies (mapv maven-package-url (:children dep))}]
+                              (walk (:children dep) "indirect"))))
+                    deps))]
+    (reduce (fn [acc [purl entry]]
+              (assoc acc purl (if-let [existing (get acc purl)]
+                                (merge-resolved-dependency existing entry)
+                                entry)))
+            {}
+            (walk (:children root) "direct"))))
+
+(defn- dependency-snapshot
+  "A dependency snapshot for the GitHub dependency submission API, with the project file (not the
+  generated pom.xml) as the manifest, so Dependabot alerts name the project file."
+  [{:keys [project-path]} dep-tree {:keys [github-ref github-sha github-run-id]}]
+  {:version 0
+   :sha github-sha
+   :ref github-ref
+   ;; the correlator is what maven-dependency-submission's --job-name was, so each project's
+   ;; snapshot replaces the one previously submitted with it
+   :job {:correlator project-path
+         :id (or github-run-id (str (System/currentTimeMillis)))}
+   :detector {:name "clojure-dependabot"
+              :version version
+              :url homepage}
+   :scanned (str (java.time.Instant/now))
+   :manifests {project-path {:name project-path
+                             :file {:source_location project-path}
+                             :resolved (snapshot-resolved dep-tree)}}})
+
+(defn- submit-snapshot
+  [snapshot {:keys [github-repository github-token]}]
+  (sh {:extra-env {"GH_TOKEN" github-token}
+       :in (json/generate-string snapshot)}
+      "gh" "api"
+      "--method" "POST"
+      "-H" "Accept: application/vnd.github+json"
+      (str "/repos/" github-repository "/dependency-graph/snapshots")
+      "--input" "-"))
+
+(defn- mvn-scan
+  "Submits a dependency snapshot for each project, and returns `files` with each project's Maven
+  dependency tree (see `mvn-tree`) as `:dep-tree`, so later steps don't need the pom.xml."
+  [files & {:as opts}]
+  ;; TODO parallel ?
+  (mapv
+    (fn [{:keys [full-path project-path] :as file}]
+      (let [dir (-> full-path fs/parent str)
+            pom-gen (if (= (fs/file-name project-path) "deps.edn")
+                      #(sh {:dir %} "clojure" "-X:deps" "mvn-pom")
+                      #(sh {:dir %} "lein" "pom"))]
+        (log "Generating pom.xml for" project-path)
+        (try
+          (pom-gen dir)
+          ;; the tree is built right after generating the pom.xml, as a directory with both a deps.edn
+          ;; and a project.clj generates both into the same pom.xml
+          (let [dep-tree (mvn-tree dir)
+                snapshot (dependency-snapshot file (:json dep-tree) opts)]
+            (log "Submitting to Dependabot API for" project-path)
+            (retry 2 (submit-snapshot snapshot opts))
+            (assoc file :dep-tree dep-tree))
+          (finally
+            ;; always remove the pom.xml so `antq` or other tools don't try to manage it
+            (fs/delete-if-exists (fs/path dir "pom.xml"))))))
+    files))
+
+(defn- alert-for-project?
+  "Whether a Dependabot `alert` belongs to the project `file`. The snapshots `mvn-scan` submits
+  name the project file (e.g. `foo/deps.edn`) as the manifest, not the generated pom.xml, so
+  an alert's manifest path is the project path."
+  [file alert]
+  (= (:project-path file) (-> alert :dependency :manifest-path)))
+
+(defn- vuln-summary
+  "The summary of `file`, which has the `:dep-tree` added by `mvn-scan`."
+  [file alerts outdated]
   (log "Writing summary for" (:project-path file))
-  (let [dep-tree (-> file :full-path fs/parent str mvn-tree)
-        flat-deps (->> dep-tree
-                       :json
-                       flatten-mvn-tree
-                       (map (fn [dep] (str (:group-id dep) ":" (:artifact-id dep))))
-                       set)
-        filtered-alerts (filter
-                          (fn [alert] (= (-> alert :dependency :manifest-path)
-                                         (:project-path file)))
-                          alerts)]
+  (let [dep-tree (:dep-tree file)
+        filtered-alerts (filter #(alert-for-project? file %) alerts)]
     (str
       (h/html [:h1 (:project-path file)]
               "\n\n"
@@ -480,8 +537,6 @@
 
 (defn- vuln-summaries
   [alerts outdated scannable-files & {:keys [github-step-summary]}]
-
-  (throw (ex-info "step summary" {:x github-step-summary}))
 
   ;; TODO parallel ?
   (doseq [file scannable-files]
@@ -742,8 +797,7 @@
   ;; TODO see if we can opportunistically pull the security update's version from the outdated list
   (concat
     (->> alerts
-         (filter (fn [alert] (= (-> alert :dependency :manifest-path)
-                                (:project-path file))))
+         (filter #(alert-for-project? file %))
          (map #(-> % :dependency :package :name gh-package->antq-name))
          distinct
          (map (fn [package] [package nil])))
@@ -805,10 +859,10 @@
 
     (let [deps-edn-files (list-files "deps.edn" opts)
           project-clj-files (list-files "project.clj" opts)
-          all-files (concat deps-edn-files project-clj-files)]
+          project-files (concat deps-edn-files project-clj-files)]
         (install-local-dependencies opts)
-        (mvn-scan all-files opts)
-        (let [outdated (if-not (:security-updates-only opts)
+        (let [all-files (mvn-scan project-files opts)
+              outdated (if-not (:security-updates-only opts)
                                (list-outdated all-files opts)
                                nil)
               ;; NOTE: fetching alerts *after* so that there's time to allow new reports to appear in the API
